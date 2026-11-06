@@ -79,6 +79,12 @@ def main():
                     help='分析时的降采样帧率（默认 6；越高越准越慢）')
     ap.add_argument('--out', default='shots', help='输出目录')
     ap.add_argument('--no-images', action='store_true', help='只出报告，不导 PNG')
+    ap.add_argument('--canvas', default=None,
+                    choices=['cheap', 'readable', 'max', 'auto'],
+                    help='出图清晰档（默认 readable）：'
+                         'cheap=800×450，每格 400×225，233 tok/张（基线，不加价）'
+                         ' / readable=1066×600，每格 533×300，407 tok/张（加 75%%，能读清小字）'
+                         ' / max=1280×720，每格 640×360，578 tok/张（加 148%%）')
     a = ap.parse_args()
 
     video = pathlib.Path(a.video)
@@ -117,8 +123,37 @@ def main():
 
     times = [round(i * (probe_duration(video) / max(1, n)), 3) for i in keys] if a.fps else None
 
+    # 出图计划：给 K 个关键帧，按画布档位算「每张几帧、共几张、多少 token」
+    from src.kf.layout import constraints_for, plan as layout_plan, CANVAS_PROFILES, DEFAULT_CANVAS_PROFILE
+    profile = a.canvas or DEFAULT_CANVAS_PROFILE   # 默认 readable（实测边际≈1:1）
+    plan_out = None
+    if profile != 'auto':
+        try:
+            lp = layout_plan(chosen_k, constraints=constraints_for(profile),
+                             distinct_table={4: 0.509, 8: 0.489})
+            r = lp.recommended
+            plan_out = {
+                'profile': profile,
+                'label': CANVAS_PROFILES[profile]['label'],
+                'canvas': list(r.canvas), 'pack': r.pack,
+                'cell': [round(r.cell_w), round(r.cell_h)],
+                'short_side': round(r.short_side),
+                'sheets': lp.sheets, 'tokens_total': lp.total_tokens,
+                'baseline_sheets': lp.baseline_sheets,
+                'baseline_tokens': lp.baseline_tokens,
+                'token_overhead_pct': round((lp.total_tokens / max(1, lp.baseline_tokens) - 1) * 100, 1),
+            }
+        except Exception as e:
+            plan_out = {'profile': profile, 'error': str(e)}
+    else:
+        # 'auto' 保留入口但本期未实现：不做「静默降级成 readable」，
+        # 而是明确说出来（否则用户以为它按素材自动选了，其实没有）。
+        plan_out = {'profile': 'auto',
+                    'note': 'UNVER: 自动档未实现；请显式传 cheap/readable/max'}
+
     report = {
         'video': str(video.resolve()),
+        'canvas_plan': plan_out,
         'selected_k': chosen_k,
         'requested': {'k': a.k, 'budget': a.budget},
         'analysis_fps': a.fps,

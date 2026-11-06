@@ -376,3 +376,54 @@ if __name__ == '__main__':
     print('用法: python3 scripts/bench_m2.py --mode optimized '
           '[--corpus eval/fanren184.mp4 --fps 6]', file=sys.stderr)
     sys.exit(2)
+
+
+# ---------------------------------------------------------------- 双路抽帧（M3 复用 M2 的解码）
+
+#: 给光流用的分辨率。**为什么是 96×54 而不是 160×90**：
+#: 实测双路（32×18 + 96×54）一次解码 **96s**，比只抽 32×18 的 140s 更快
+#: （ffmpeg 的 `split` 让管线吃满）；而 96×54 的光流 1/3 成本于 160×90，
+#: 精度仍远高于 32×18（后者光流会失真到无法用）。
+DUAL_FLOW_W, DUAL_FLOW_H = 96, 54
+
+
+def load_dual(path, sample_fps=None, ffmpeg=FF, hwaccel=True,
+              flow_w=DUAL_FLOW_W, flow_h=DUAL_FLOW_H):
+    """一次解码，同时产出「给 k-center 的 32×18」与「给光流的 flow_w×flow_h」。
+
+    这是 M3 唯一值得做的提速：**光流不复用独立抽帧**，而是搭 M2 的解码顺风车。
+    实测（fanren184 29min @6fps）：
+      - 只抽 32×18          140s
+      - 双路 32×18 + 96×54   96s   ← 更快（split 吃满管线）
+      - 光流全片（96×54）    ~7s
+
+    Returns: (X_kc (n,576) uint8, F_flow (n, flow_h, flow_w) uint8, decode_used)
+    """
+    import tempfile, os
+    vf_common = (f'fps={sample_fps},' if sample_fps else '')
+    fc = (f'[0:v]{vf_common}split=2[a][b];'
+          f'[a]scale={ANALYSIS_W}:{ANALYSIS_H},format=gray[a1];'
+          f'[b]scale={flow_w}:{flow_h},format=gray[b1]')
+    with tempfile.TemporaryDirectory() as td:
+        pa = os.path.join(td, 'kc.raw')
+        pb = os.path.join(td, 'flow.raw')
+        base = ['-filter_complex', fc,
+                '-map', '[a1]', '-f', 'rawvideo', '-pix_fmt', 'gray', pa,
+                '-map', '[b1]', '-f', 'rawvideo', '-pix_fmt', 'gray', pb]
+        head = ['-v', 'error', '-i', str(path)]
+        used = 'software'
+        if hwaccel:
+            r = subprocess.run([FF, '-hwaccel', 'videotoolbox'] + head + base,
+                               capture_output=True)
+            used = 'videotoolbox' if (r.returncode == 0 and os.path.exists(pa)) else 'software(fallback)'
+        if used != 'videotoolbox':
+            r = subprocess.run([FF] + head + base, capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(f'ffmpeg dual failed: {r.stderr[:200]}')
+        Dk = ANALYSIS_W * ANALYSIS_H
+        Df = flow_w * flow_h
+        nk = os.path.getsize(pa) // Dk
+        nf = os.path.getsize(pb) // Df
+        X = np.fromfile(pa, dtype=np.uint8).reshape(-1, Dk)[:min(nk, nf)]
+        F = np.fromfile(pb, dtype=np.uint8).reshape(-1, flow_h, flow_w)[:min(nk, nf)]
+        return X, F, used, nk

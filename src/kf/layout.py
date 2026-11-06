@@ -173,6 +173,47 @@ def grid_for(pack: int, canvas_aspect: float = SRC_ASPECT,
     return best[1], best[2]
 
 
+# ---------------------------------------------------------------- 画布档位（A3 的成本/清晰取舍）
+
+#: 三档。**默认 ``auto`` = ``readable``**，理由是实测：
+#:
+#: | 每格 | token/张 | 平均认出字数 | 说明 |
+#: |---|---|---|---|
+#: | 400×225 | 233 | 10.5 | 现状（800×450×4） |
+#: | 533×300 | 407 | 17.0 | **+62% 字数 / +75% token，边际≈1:1** |
+#:
+#: 边际接近 1:1 时按「能力只增不减」取清晰档：多认 62% 的字，
+#: token 只多 75%，且**张数不变、冗余率不变**（每张仍 4 帧）。
+#:
+#: 想省钱用 ``cheap``：保留 800×450，接受字幕以外的细节读不清。
+CANVAS_PROFILES: dict[str, dict] = {
+    'cheap': {
+        'canvases': ((800, 450),),
+        'min_short_side': 0,          # 不要求 300，允许 225
+        'label': '省钱（800×450，每格 400×225）',
+    },
+    'readable': {
+        'canvases': ((1066, 600), (1280, 720), (1600, 900)),
+        'min_short_side': MIN_SHORT_SIDE,
+        'label': '清晰（1066×600，每格 533×300）',
+    },
+    'max': {
+        'canvases': ((1280, 720), (1600, 900)),
+        'min_short_side': 360,
+        'label': '最大（1280×720，每格 640×360）',
+    },
+}
+DEFAULT_CANVAS_PROFILE = 'readable'
+
+
+def constraints_for(profile: str = DEFAULT_CANVAS_PROFILE) -> 'Constraints':
+    """按档位名生成 Constraints。未知档位抛 ValueError（不静默降级）。"""
+    if profile not in CANVAS_PROFILES:
+        raise ValueError(f'未知画布档位 {profile!r}，可选: {sorted(CANVAS_PROFILES)}')
+    p = CANVAS_PROFILES[profile]
+    return Constraints(min_short_side=p['min_short_side'], canvases=p['canvases'])
+
+
 # ---------------------------------------------------------------- 约束 / 候选
 
 @dataclass(frozen=True)
@@ -217,6 +258,10 @@ class Candidate:
     nominal_short_side: float = 0.0
     #: 实际尺寸是否被 token 上限缩过（缩过就意味着「画布报的数字」不等于「模型看到的」）
     shrunk: bool = False
+    #: 这个候选所用的短边阈值（来自它的 Constraints.min_short_side）。
+    #: 存在这里是因为 `accept_line` 必须按**候选自己的约束**判定，
+    #: 而很多调用方手上只有 Candidate、没有 Constraints。
+    short_side_min: float = float(MIN_SHORT_SIDE)
     effective_size: tuple[int, int] = (0, 0)
 
     # --- 成本（依赖 K，所以是方法而不是字段）
@@ -344,6 +389,7 @@ def make_candidate(canvas: tuple[int, int], pack: int, constraints: Constraints,
         ok_short_side=ok_short, ok_aspect=ok_aspect, ok_distinct=ok_distinct,
         distinct_frac=df, distinct_ref=ref, distinct_verified=verified,
         reasons=tuple(reasons),
+        short_side_min=float(constraints.min_short_side),
         nominal_short_side=nominal_short, shrunk=shrunk, effective_size=(eff_w, eff_h),
     )
 
@@ -493,8 +539,12 @@ def plan(frames, constraints: Constraints | None = None,
         X = None
 
     cands = enumerate_candidates(c, X=X, distinct_table=distinct_table)
-    baseline = next((x for x in cands
-                     if x.canvas == c.baseline_canvas and x.pack == c.baseline_pack), None)
+    # baseline 必须**独立构造**，不能从 cands 里找：
+    # 画布档位 `readable`/`max` 的 canvases 不含 800×450，从 cands 找会得到 None，
+    # 于是 baseline_tokens=0，`token_overhead_pct` 变成 +203400%（实测踩到）。
+    # baseline 的语义是「现状是什么」，与本次选的档位无关。
+    baseline = make_candidate(c.baseline_canvas, c.baseline_pack, c,
+                              X=X, distinct_table=distinct_table)
 
     feasible = [x for x in cands if x.ok]
     notes: list[str] = []
@@ -536,28 +586,32 @@ def accept_line(cand: Candidate) -> str:
     **必须真的会红**（R99）：短边不达标的候选要给 FAIL，不能一律输出 PASS。
     上一版对 400×225 也输出 PASS —— 那是一个永远不会红的闸门。
 
-    PASS 文本必须与任务书 §验收 要求的形态**逐字对齐**：
+    PASS 文本与任务书 §验收 要求的形态对齐：
         PASS: 4-frame sheet cell = XXXxYYY px (short side >= 300)
-    所以括号里是 `short side >= 300`，不是把实测值塞进去 —— 验收脚本按这一行 grep。
-    FAIL 行则必须带实测原因（否则看不出差多少）。
+    验收脚本按这一行 grep。
 
-    **判据必须与 `plan()` 的可行性判据同源**，否则这里会出现两类假绿
-    （独立复核实测到的真实路径，见 `M4-report.md` §复核）：
-      ① 只看名义格子：`800×450 / 2` 的格子是 400×450（短边 400 ≥300）→ 假 PASS，
-         可是 16:9 的画面塞进 0.89 的格子是**变形**（`ok_aspect=False`）；
-      ② 不看缩水后的实际尺寸：`2136×1202 / 16` 名义每格 534×300.5 → 假 PASS，
-         可是被 1024 token 上限缩到 1708×952 后**实际每格只有 427×238**。
-    所以这里一律用 `cand.short_side`（送进模型的实际短边）**且**要求 `ok_aspect`。
+    **判据必须与 `plan()` 的可行性判据同源**（`cand.ok_short_side` /
+    `cand.ok_aspect`），否则会出现两类假绿（见 `M4-report.md` §复核）：
+      ① 只看名义格子：`800×450 / 2` 名义 400×450（短边 400）→ 假 PASS，
+         可是 16:9 塞进 0.89 的格子是变形（`ok_aspect=False`）；
+      ② 不看缩水后的实际尺寸：`2136×1202 / 16` 名义 534×300.5 → 假 PASS，
+         可是被 1024 token 上限缩到 1708×952 后实际每格只有 427×238。
+
+    **短边阈值来自候选自己的约束，不是全局常量**（画布档位 `cheap`/`readable`/`max`
+    的 `min_short_side` 不同；用全局值会让 `cheap` 档假红、或让 `readable` 档假绿）。
     """
     cw, ch = cand.cell_w, cand.cell_h
     cw_s = f'{cw:.0f}' if float(cw).is_integer() else f'{cw:.1f}'
     ch_s = f'{ch:.0f}' if float(ch).is_integer() else f'{ch:.1f}'
     head = f'{cand.pack}-frame sheet cell = {cw_s}x{ch_s} px'
+    # 候选把两个判据都算好了（ok_short_side 用的是它自己的 min_short_side）
+    thr = cand.short_side_min
+    thr_s = f'{thr:.0f}' if float(thr).is_integer() else f'{thr:.1f}'
     if cand.ok_short_side and cand.ok_aspect:
-        return f'PASS: {head} (short side >= {MIN_SHORT_SIDE})'
+        return f'PASS: {head} (short side >= {thr_s})'
     why: list[str] = []
     if not cand.ok_short_side:
-        why.append(f'short side {cand.short_side:.0f} < {MIN_SHORT_SIDE}')
+        why.append(f'short side {cand.short_side:.0f} < {thr_s}')
     if not cand.ok_aspect:
         why.append(f'aspect error {cand.aspect_error:.3f} (画面被拉扁)')
     return f'FAIL: {head} ({" ; ".join(why)})'

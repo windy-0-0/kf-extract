@@ -307,6 +307,62 @@ def test_measured_4frame_sheet_geometry():
     assert c.cell == (400, 225), c.cell
 
 
+
+
+
+def test_canvas_profiles_exist():
+    """三档都要能建出来，且成本递增。"""
+    from src.kf.layout import CANVAS_PROFILES, constraints_for
+    assert set(CANVAS_PROFILES) == {'cheap', 'readable', 'max'}
+    for prof in CANVAS_PROFILES:
+        c = constraints_for(prof)
+        assert c.canvases
+
+
+def test_canvas_profile_costs_increase():
+    """成本必须单调：cheap < readable < max（同一个 K）。"""
+    from src.kf.layout import constraints_for
+    toks = []
+    for prof in ('cheap', 'readable', 'max'):
+        lp = plan(80, constraints=constraints_for(prof), distinct_table=DISTINCT)
+        toks.append(lp.total_tokens)
+    assert toks == sorted(toks), f'档位成本应递增: {toks}'
+    # cheap 必须等于基线（+0%）
+    lp = plan(80, constraints=constraints_for('cheap'), distinct_table=DISTINCT)
+    assert lp.total_tokens == lp.baseline_tokens, 'cheap 应当就是基线'
+
+
+def test_baseline_independent_of_profile():
+    """baseline 必须与所选档位无关 —— 它永远代表「现状」。"""
+    from src.kf.layout import constraints_for
+    bases = []
+    for prof in ('cheap', 'readable', 'max'):
+        lp = plan(80, constraints=constraints_for(prof), distinct_table=DISTINCT)
+        bases.append((lp.baseline.canvas, lp.baseline_tokens))
+    assert len(set(bases)) == 1, f'baseline 不该随档位变: {bases}'
+    assert bases[0][0] == (800, 450)
+
+
+def test_threshold_comes_from_candidate():
+    """R99 横向：cheap 档 225px 必须 PASS（它的阈值是 0），
+    readable 档同样 225px 必须 FAIL（阈值 300）。"""
+    from src.kf.layout import constraints_for, make_candidate
+    cheap_c = make_candidate((800, 450), 4, constraints_for('cheap'), distinct_table=DISTINCT)
+    read_c = make_candidate((800, 450), 4, constraints_for('readable'), distinct_table=DISTINCT)
+    assert accept_line(cheap_c).startswith('PASS'), accept_line(cheap_c)
+    assert accept_line(read_c).startswith('FAIL'), accept_line(read_c)
+
+
+def test_unknown_profile_raises():
+    from src.kf.layout import constraints_for
+    try:
+        constraints_for('nope')
+    except ValueError as e:
+        assert '未知画布档位' in str(e)
+        return
+    raise AssertionError('未知档位应当抛 ValueError（不许静默降级）')
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0
