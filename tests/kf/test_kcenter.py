@@ -87,6 +87,38 @@ def test_empty_raises():
         return
     raise AssertionError('空输入应当抛 ValueError')
 
+
+
+
+def test_time_coverage_reports_imbalance():
+    """R99 横向：只看「占几段」会变成假绿 —— 必须能报出分布不均。"""
+    # 完美均匀
+    r = time_coverage(list(range(0, 100, 10)), 100)
+    assert r['buckets_hit'] == 10 and r['imbalance'] == 1.0
+    # 挤在少数段：覆盖率可能仍「过得去」，但 imbalance 必须显著 > 1
+    r2 = time_coverage([0, 1, 2, 3, 4, 50], 100)     # 6 帧，5 个在前段
+    assert r2['buckets_hit'] == 2
+    assert r2['imbalance'] >= 2.0, f'分布明显不均却没报出来: {r2}'
+    # 空输入不许崩
+    assert time_coverage([], 100)['imbalance'] is None
+
+
+def test_time_coverage_hit_is_not_enough():
+    """同样是「占 2/10 段」，一条各占 1 帧、一条 1+5 帧 —— buckets_hit 无法区分，imbalance 可以。
+
+    **这是 agent 指出的真问题**：`buckets_hit=10/10` 人人能过，
+    但「一段塞 22%、一段塞 3%」和「每段 10%」在覆盖率上无法区分。
+    """
+    even = time_coverage([0, 60], 100)                # 段0 1 帧、段6 1 帧 → max_share 50%
+    skew = time_coverage([0, 1, 2, 3, 4, 60], 100)    # 段0 5 帧、段6 1 帧 → max_share 83%
+    assert even['buckets_hit'] == skew['buckets_hit'] == 2
+    assert skew['max_share'] > even['max_share'], '最大段占比必须能区分两种分布'
+    assert skew['imbalance'] > even['imbalance'], 'imbalance 必须能区分'
+    # 而「每段 1 帧」是完美的
+    perfect = time_coverage(list(range(0, 100, 10)), 100)
+    assert perfect['imbalance'] == 1.0 == min(perfect['imbalance'], even['imbalance'], skew['imbalance'])
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

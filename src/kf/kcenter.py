@@ -171,13 +171,32 @@ def compare_with_uniform(X: np.ndarray, ks: Sequence[int],
 
 
 def time_coverage(keys: Sequence[int], n: int, buckets: int = 10) -> dict:
-    """时间覆盖率：把 n 帧均分 buckets 段，选中帧落在几段里。
+    """时间分布：把 n 帧均分 buckets 段，报告「占几段」**和**「分布是否均匀」。
 
-    这是「按顺序理解剧情」的关键诊断：即使覆盖指标好看，
-    若 80 帧全选在前 5 分钟，对叙事用途就是坏的。
+    **只看 buckets_hit 会变成新的假绿**（实测踩到，agent 指出的）：
+    10/10 人人能过（10 段里有帧就算），但「一段塞 22%、一段仅 3%」仍然是不均。
+    均匀采样恒为 10.0%；k-center 实测 22–24% —— **覆盖率满分，分布却两倍不均**。
+
+    所以必须同时报：
+      - `buckets_hit`  ：占了几段（覆盖广度）
+      - `max_share`    ：单段最多占多少（**分布均匀性**，理想 = 1/buckets）
+      - `empty_buckets`：空段数
+      - `imbalance`    ：max_share / (1/buckets)，1.0 = 完美均匀
     """
+    keys = list(keys)
     if not keys:
-        return {'buckets_hit': 0, 'buckets': buckets, 'ratio': 0.0}
+        return {'buckets_hit': 0, 'buckets': buckets, 'ratio': 0.0,
+                'max_share': 0.0, 'empty_buckets': buckets, 'imbalance': None}
     b = np.minimum((np.asarray(keys) * buckets) // max(1, n), buckets - 1)
-    hit = len(set(b.tolist()))
-    return {'buckets_hit': hit, 'buckets': buckets, 'ratio': round(hit / buckets, 3)}
+    counts = np.bincount(b, minlength=buckets)
+    hit = int((counts > 0).sum())
+    mx = float(counts.max()) / len(keys)
+    ideal = 1.0 / buckets
+    return {
+        'buckets_hit': hit,
+        'buckets': buckets,
+        'ratio': round(hit / buckets, 3),
+        'max_share': round(mx, 3),
+        'empty_buckets': int((counts == 0).sum()),
+        'imbalance': round(mx / ideal, 2) if len(keys) else None,
+    }

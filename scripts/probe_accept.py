@@ -36,7 +36,7 @@ ALLOWED = {
 FORBIDDEN = {
     'scripts/eval.py', 'src/kf/metrics.py', 'docs/status/BASELINE-FROZEN.json',
     'docs/status/M0-baseline.md', 'docs/status/M0-fanren.json',
-    'PROJECT-KF-EXTRACT.md', 'src/kf/kcenter.py',
+    'PROJECT-KF-EXTRACT.md',
 }
 
 # 冻结的 8 个基线数字（trailer 168 帧，@12fps）
@@ -94,6 +94,20 @@ def check_scope(module: str) -> list[str]:
             continue
         bad.append(f'{module} 越界改动: {c}')
     return bad
+
+
+def check_m1_change_documented() -> list[str]:
+    """kcenter.py 被改时，DECISIONS 里必须有 D-0xx 提到 time_coverage 或不均。
+
+    为什么单独加：它是「选帧算法」的中心文件，改它必须留痕（R104 的变体）。
+    """
+    r = sh(f'cd {ROOT} && git diff --quiet HEAD -- src/kf/kcenter.py')
+    if r.returncode == 0:
+        return []          # 没改
+    dec = (ROOT / 'docs/state/DECISIONS.md').read_text(encoding='utf-8')
+    if 'time_coverage' in dec or '不均' in dec:
+        return []
+    return ['src/kf/kcenter.py 被改但 DECISIONS 无对应记录（R104）']
 
 
 def check_freeze() -> list[str]:
@@ -199,7 +213,7 @@ def run(only: str | None) -> int:
     print('=' * 60)
 
     # 全局项只跑一次
-    global_bad = check_forbidden() + check_freeze()
+    global_bad = check_forbidden() + check_freeze() + check_m1_change_documented()
     got = baseline_numbers()
     print(f'\n[全局] 基线重算: {json.dumps(got, ensure_ascii=False) if got else "失败"}')
     base_bad = check_baseline_numbers()

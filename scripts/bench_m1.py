@@ -34,13 +34,15 @@ def main():
         X = load_gray(p, sample_fps=fps)
         n = len(X)
         print(f'\n=== {name} ({n} 帧 @{fps}fps) ===')
-        print(f'{"K":>5} {"kc_maxdist":>11} {"uni_maxdist":>12} {"改善":>7} {"时间覆盖":>9}')
+        print(f'{"K":>5} {"kc_maxdist":>11} {"uni_maxdist":>12} {"改善":>7} '
+              f'{"覆盖":>6} {"单段最大":>8} {"不均":>6}')
         for k in ks:
             if k > n: continue
             r = compare_with_uniform(X, [k])[0]
             cov = time_coverage(kcenter(X, k)['keys'], n)
             print(f'{k:>5} {r["kcenter_maxdist"]:>11.1f} {r["uniform_maxdist"]:>12.1f} '
-                  f'{r["improvement"]*100:>6.0f}% {cov["buckets_hit"]:>4}/10')
+                  f'{r["improvement"]*100:>6.0f}% {cov["buckets_hit"]:>4}/10 '
+                  f'{cov["max_share"]*100:>7.0f}% {cov["imbalance"]:>5.1f}x')
             rows.append({'material': name, 'n': n, **r, **cov})
         print(f'  ({time.time()-t0:.0f}s)')
     if a.out:
