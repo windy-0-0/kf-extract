@@ -21,7 +21,7 @@
 | M0 | 评测器 + 基线 | **pass** | `scripts/eval.py`（selftest 3/3）；四段全跑；`M0-baseline.md`；`M0-fanren.json` |
 | M1 | k-center | **pass** | `src/kf/kcenter.py`；`test_kcenter.py` 10/10；`M1-bench.json`；收益番剧 **21–38%**；时间覆盖 **10/10** |
 | M2 | 加速 | **pass** | `src/kf/fast.py`（O1–O6 逐条证明不改数字）；**1096s → 98–135s**；基线 **8/8 逐位不变**；RSS 311MB |
-| M3 | 光流距离 | **pass（验证性）** | `src/kf/flow.py`；`test_flow.py` 24/24（3 纹理方向锚点）；覆盖改善 **78–89%**；**corr 0.474 仍混运动**；345s/30min 不能进生产 |
+| M3 | 光流距离 | **FAIL（判据不达标，如实判不可行）** | `src/kf/flow.py`；`test_flow.py` 24/24（3 纹理方向锚点）；**同标尺下选帧变差 +14.3%~+32.0%（四项全变差）**；**corr 0.513 仍混运动**；全帧率 325s 不能进生产。见 D-018 |
 | M4 | 出图策略 | **pass** | `src/kf/layout.py`；`test_layout.py` 8/8；达标 = **1066×600×4帧**（533×300）；代价 **+75% token** |
 | M5 | 端到端 CLI | **pass** | `scripts/kf_extract.py`；出原分辨率 PNG + `extract.json` |
 
@@ -92,7 +92,7 @@
 | M0 评测器 + 基线 | **pass** | 四段素材；`M0-baseline.md` / `M0-fanren.json` |
 | M1 k-center | **pass** | 10/10 测试；收益 **番剧 21–38%**；时间覆盖 **10/10** |
 | M2 加速 | **pass** | **1096s → 98–135s（9.4×）**；基线 8/8 逐位不变；RSS 311MB |
-| M3 光流距离 | **pass（验证性）** | 覆盖改善 **78–89%**；方向锚点 3 纹理全过；**corr 0.474 仍混运动** |
+| M3 光流距离 | **FAIL（不可行）** | 同标尺 +14.3%~+32.0%（全变差）；方向锚点 3 纹理全过；**corr 0.513 仍混运动** |
 | M4 出图策略 | **pass** | 达标组合 **1066×600×4帧（533×300）**；代价 **+75% token** |
 | M5 端到端 CLI | **pass** | `scripts/kf_extract.py`，出原分辨率 PNG + JSON 报告 |
 
