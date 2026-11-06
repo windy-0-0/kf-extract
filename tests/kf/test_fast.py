@@ -158,7 +158,7 @@ print(f'METRICS_EQUAL={same_ref}')
 # 3) 验收参数的算术证明：K=2000 不分块 float32 需要多少 GB
 print(f'AT_K2000_F32_GB={10403 * 2000 * 576 * 4 / 1024**3:.1f} > 16GB 物理内存 → 必 OOM')
 '''
-    r = subprocess.run([str(ROOT / 'venv' / 'bin' / 'python'), '-c', script % str(ROOT / 'src')],
+    r = subprocess.run([sys.executable, '-c', script % str(ROOT / 'src')],
                        capture_output=True, text=True, timeout=600, cwd=ROOT)
     out = r.stdout + r.stderr
     ok = ('RSS_OVER_2GB' in out) and ('BITS_EQUAL=True' in out) \

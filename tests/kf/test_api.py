@@ -21,6 +21,8 @@ def _skip(msg='缺 eval/trailer.mp4（素材在 Release 附件里）'):
 
 
 def test_requires_k_or_budget():
+    if not _HAVE:
+        _skip(); return
     try:
         extract(str(TRAILER))
     except ValueError as e:
@@ -30,6 +32,8 @@ def test_requires_k_or_budget():
 
 
 def test_rejects_both():
+    if not _HAVE:
+        _skip(); return
     try:
         extract(str(TRAILER), k=8, budget=20)
     except ValueError:
