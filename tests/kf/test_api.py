@@ -7,10 +7,22 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'src'))
 
 from kf import extract
 
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+#: **绝对路径 + 缺素材就跳过**。
+#: 早期写成相对路径 `'eval/trailer.mp4'`，于是测试只在「cwd == 仓库根」时能过 ——
+#: 从干净的克隆里跑（素材没下载）会报 FileNotFoundError 而不是 skip，
+#: 看上去像「代码坏了」，实际是「素材没下载」。测试必须能区分这两种情况。
+TRAILER = ROOT / 'eval/trailer.mp4'
+_HAVE = TRAILER.exists()
+
+
+def _skip(msg='缺 eval/trailer.mp4（素材在 Release 附件里）'):
+    print(f'  (skip: {msg})')
+
 
 def test_requires_k_or_budget():
     try:
-        extract('eval/trailer.mp4')
+        extract(str(TRAILER))
     except ValueError as e:
         assert 'k' in str(e) and 'budget' in str(e)
     else:
@@ -19,7 +31,7 @@ def test_requires_k_or_budget():
 
 def test_rejects_both():
     try:
-        extract('eval/trailer.mp4', k=8, budget=20)
+        extract(str(TRAILER), k=8, budget=20)
     except ValueError:
         return
     raise AssertionError('k 与 budget 同时给却没报错')
@@ -34,9 +46,11 @@ def test_missing_file_raises_filenotfound():
 
 
 def test_result_is_json_serializable():
+    if not _HAVE:
+        _skip(); return
     import json
 
-    r = extract('eval/trailer.mp4', k=8)
+    r = extract(str(TRAILER), k=8)
     s = json.dumps(r, ensure_ascii=False)
     assert len(s) > 500
     back = json.loads(s)
@@ -45,7 +59,9 @@ def test_result_is_json_serializable():
 
 
 def test_result_attribute_access():
-    r = extract('eval/trailer.mp4', k=8)
+    if not _HAVE:
+        _skip(); return
+    r = extract(str(TRAILER), k=8)
     assert r.selected_k == r['selected_k']
     assert r.maxdist == r['maxdist']
     try:
@@ -68,7 +84,9 @@ def test_k_equals_n_covers_everything():
 
 def test_invariants_of_report():
     """报告里的数字必须自洽 —— 这也是用户会拿去做判断的依据。"""
-    r = extract('eval/trailer.mp4', k=16)
+    if not _HAVE:
+        _skip(); return
+    r = extract(str(TRAILER), k=16)
     assert r.selected_k == 16, 'selected_k 与请求不符'
     assert 0 <= r.maxdist < 256, 'maxdist 不在合理量程'
     assert r.max_gap_sec >= r.median_gap_sec, '最大空白小于中位空白，不可能'
@@ -78,8 +96,10 @@ def test_invariants_of_report():
 
 
 def test_sheets_default_on_and_match_png_count():
+    if not _HAVE:
+        _skip(); return
     with tempfile.TemporaryDirectory() as td:
-        r = extract('eval/trailer.mp4', k=12, out=td)
+        r = extract(str(TRAILER), k=12, out=td)
         assert len(r.images) == 12
         assert len(r.sheet_files) == 3, f'12 帧 4 格应 3 张，实际 {len(r.sheet_files)}'
         # 每张图集的容量都不能超
@@ -96,10 +116,12 @@ def test_sheet_time_labels_match_json():
     这是「产物自证」的核心：模型引用「第 42 张、7 分 14 秒」时，
     用户能在 JSON 里查到同一个数。两边对不上 = 引用不可复核。
     """
+    if not _HAVE:
+        _skip(); return
     from kf.sheets import _mmss
 
     with tempfile.TemporaryDirectory() as td:
-        r = extract('eval/trailer.mp4', k=8, out=td)
+        r = extract(str(TRAILER), k=8, out=td)
         want = [_mmss(t) for t in r.keys_time_sec]
         # 从 labels 生成逻辑复算（与 _build_sheets 同一规则）
         got = [f'#{i:02d} {want[i]}' for i in range(len(want))]
@@ -110,7 +132,9 @@ def test_sheet_time_labels_match_json():
 
 
 def test_no_images_still_reports():
-    r = extract('eval/trailer.mp4', k=8, images=False, sheets=False)
+    if not _HAVE:
+        _skip(); return
+    r = extract(str(TRAILER), k=8, images=False, sheets=False)
     assert r.selected_k == 8
     assert r.images == []
 

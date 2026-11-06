@@ -10,6 +10,9 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 PY = sys.executable
 SRC = str(ROOT / 'src')
+#: 绝对路径 + 缺素材就跳过（理由见 test_api.py 同位置注释）
+TRAILER = ROOT / 'eval/trailer.mp4'
+_HAVE = TRAILER.exists()
 
 
 def _run(argv, timeout=120):
@@ -23,13 +26,17 @@ def _run(argv, timeout=120):
 
 
 def test_missing_k_and_budget_exits_1():
-    rc, out = _run(['eval/trailer.mp4'])
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
+    rc, out = _run([str(TRAILER)])
     assert rc == 1, f'没给 k/budget 应退出 1（argparse 的 required 也给 2，这里接受 1/2）'
     assert 'k' in out.lower() or 'budget' in out.lower()
 
 
 def test_both_k_and_budget_exits_1():
-    rc, out = _run(['eval/trailer.mp4', '--k', '8', '--budget', '20'])
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
+    rc, out = _run([str(TRAILER), '--k', '8', '--budget', '20'])
     assert rc == 1, f'k 与 budget 同时给应退出 1，实际 {rc}'
     assert 'not allowed' in out.lower() or '只能' in out or 'mutually' in out.lower()
 
@@ -41,12 +48,16 @@ def test_nonexistent_video_exits_2():
 
 
 def test_bad_k_exits_1():
-    rc, out = _run(['eval/trailer.mp4', '--k', '0'])
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
+    rc, out = _run([str(TRAILER), '--k', '0'])
     assert rc == 1, f'k=0 应退出 1，实际 {rc}'
 
 
 def test_bad_balance_exits_1():
-    rc, out = _run(['eval/trailer.mp4', '--k', '8', '--balance', '1.5'])
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
+    rc, out = _run([str(TRAILER), '--k', '8', '--balance', '1.5'])
     assert rc == 1, f'balance=1.5 应退出 1，实际 {rc}'
 
 
@@ -66,10 +77,12 @@ def test_help_mentions_all_knobs():
 
 def test_smoke_end_to_end(tmp_path=None):
     """最小端到端：8 帧 + 拼图 + 报告，全部产物都在。"""
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
-        rc, out = _run(['eval/trailer.mp4', '--k', '8', '--out', td, '--quiet'])
+        rc, out = _run([str(TRAILER), '--k', '8', '--out', td, '--quiet'])
         assert rc == 0, f'冒烟失败 rc={rc}\n{out}'
         assert 'PASS' in out
         d = pathlib.Path(td)
@@ -87,13 +100,13 @@ def test_input_video_not_modified():
     import hashlib
     import tempfile
 
-    v = ROOT / 'eval/trailer.mp4'
+    v = ROOT / str(TRAILER)
     if not v.exists():
         print('  (skip: 缺 eval/trailer.mp4)')
         return
     before = hashlib.sha256(v.read_bytes()).hexdigest()
     with tempfile.TemporaryDirectory() as td:
-        _run(['eval/trailer.mp4', '--k', '8', '--out', td, '--quiet'])
+        _run([str(TRAILER), '--k', '8', '--out', td, '--quiet'])
     after = hashlib.sha256(v.read_bytes()).hexdigest()
     assert before == after, '输入视频被修改了！'
 
@@ -108,16 +121,18 @@ def test_k40_then_k12_reports_and_leaves_only_12():
          目录里留 40 个 png，用户以为这次抽了 40 帧。
     这条测试同时校验「报告说实话」和「目录说实话」两件事。
     """
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
     import json
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
-        rc, out = _run(['eval/trailer.mp4', '--k', '40', '--out', td, '--quiet'])
+        rc, out = _run([str(TRAILER), '--k', '40', '--out', td, '--quiet'])
         assert rc == 0, out
         n40 = len(list(pathlib.Path(td).glob('frame-*.png')))
         assert n40 == 40, f'k=40 应产出 40 帧，实际 {n40}'
 
-        rc, out = _run(['eval/trailer.mp4', '--k', '12', '--out', td, '--quiet'])
+        rc, out = _run([str(TRAILER), '--k', '12', '--out', td, '--quiet'])
         assert rc == 0, out
         d = pathlib.Path(td)
         n12 = len(list(d.glob('frame-*.png')))
@@ -134,19 +149,23 @@ def test_k40_then_k12_reports_and_leaves_only_12():
 
 def test_sheets_generated_by_default():
     """CLI 默认就要拼图 —— 不拼图的话 token 省钱那套论证是纸上谈兵。"""
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
-        rc, out = _run(['eval/trailer.mp4', '--k', '8', '--out', td, '--quiet'])
+        rc, out = _run([str(TRAILER), '--k', '8', '--out', td, '--quiet'])
         assert rc == 0, out
         assert len(list(pathlib.Path(td).glob('sheet-*.jpg'))) == 2
 
 
 def test_no_sheets_flag_disables_them():
+    if not _HAVE:
+        print('  (skip: 缺 eval/trailer.mp4)'); return
     import tempfile
 
     with tempfile.TemporaryDirectory() as td:
-        rc, out = _run(['eval/trailer.mp4', '--k', '8', '--out', td, '--no-sheets', '--quiet'])
+        rc, out = _run([str(TRAILER), '--k', '8', '--out', td, '--no-sheets', '--quiet'])
         assert rc == 0, out
         assert len(list(pathlib.Path(td).glob('sheet-*.jpg'))) == 0
         assert len(list(pathlib.Path(td).glob('frame-*.png'))) == 8
