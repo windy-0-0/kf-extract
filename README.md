@@ -339,7 +339,7 @@ $ python3 scripts/freeze_baseline.py --check
 ## 验收
 
 ```bash
-# 124 条测试
+# 124 条测试（**不需要素材**也能跑：缺素材的用例会打印 skip 而不是失败）
 for f in tests/kf/test_*.py; do python3 $f; done
 
 # 基线冻结检查
@@ -360,6 +360,10 @@ python3 scripts/probe_accept.py --selftest
 | `test_state.py` | 11 | 原子写、指纹失效、中断语义 |
 | `test_api.py` | 10 | 结果形状、不变量、时间戳对齐 |
 | `test_cli.py` | 12 | 退出码、参数校验、**旧产物清理** |
+
+> 在**没有 eval/ 素材**的干净克隆里，这 124 条同样 124/124 通过
+> （用到真实视频的用例会 skip，并打印 `(skip: 缺 eval/trailer.mp4)`）。
+> 这是「别人克隆下来就能验证」的前提 —— 否则我们的测试只在有素材的机器上成立。
 
 ---
 

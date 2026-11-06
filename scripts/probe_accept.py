@@ -183,17 +183,27 @@ for b in budgets:
     out[f'uniform{{b}}'] = uni(b)
 print(json.dumps(out))
 '''
-    r = sh(f'{PY} -c {json.dumps(code)}') if False else sh(f'{PY} - <<\'PYEOF\'\n{code}\nPYEOF')
+    r = sh(f'{PY} - <<\'PYEOF\'\n{code}\nPYEOF')
     try:
         return json.loads(r.stdout.strip().splitlines()[-1])
     except Exception:
+        # **不许静默吞掉自己的失败**（R98：兜底机制「看不到故障」比「兜不住」更危险）。
+        # 早期实现直接 return {}，于是「素材没下载」和「代码坏了」在输出上完全一样，
+        # 都被说成「无法重算基线（脚本出错）」—— 排障时得靠猜。
+        print('  【基线重算失败，真实原因如下】', file=sys.stderr)
+        print(f'  rc={r.returncode}', file=sys.stderr)
+        print('  stdout:', (r.stdout or '')[-500:], file=sys.stderr)
+        print('  stderr:', (r.stderr or '')[-800:], file=sys.stderr)
         return {}
 
 
 def check_baseline_numbers() -> list[str]:
     got = baseline_numbers()
     if not got:
-        return ['无法重算基线（脚本出错）']
+        # 区分「素材没下载」与「代码坏了」：前者是 SKIP，后者才是 FAIL
+        if not (ROOT / 'eval/trailer.mp4').exists():
+            return ['SKIP 无法重算基线：缺 eval/trailer.mp4（素材在 Release 附件里）']
+        return ['无法重算基线（脚本出错，真实原因见上方 stderr）']
     bad = []
     for (kind, b), expect in FROZEN.items():
         key = f'{kind}{b}'
@@ -274,10 +284,20 @@ def run(only: str | None) -> int:
         print('全局 FAIL:')
         for b in global_bad:
             print('  ', b)
-    total_bad += global_bad
-    if total_bad:
-        print(f'\n❌ 共 {len(total_bad)} 项不合格')
+    # SKIP 不算不合格：素材没下载是环境状态，不是代码问题。
+    # 但必须**打印出来**（不许悄悄变成"全绿"）。
+    real_bad = [b for b in total_bad + global_bad if not b.startswith('SKIP')]
+    skips = [b for b in total_bad + global_bad if b.startswith('SKIP')]
+    if skips:
+        print('\n⚠️  跳过（不算失败）:')
+        for b in skips:
+            print('  ', b)
+    if real_bad:
+        print(f'\n❌ 共 {len(real_bad)} 项不合格')
         return 1
+    if skips:
+        print(f'\n✅ 已跑的都通过（{len(skips)} 项因缺素材跳过）')
+        return 0
     print('\n✅ 全部通过')
     return 0
 
