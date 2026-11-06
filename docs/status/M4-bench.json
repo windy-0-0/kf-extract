@@ -1,0 +1,1668 @@
+{
+  "generated_at": "2026-11-07T00:53:22",
+  "seconds": 30.0,
+  "fps": 6,
+  "clips": [
+    {
+      "clip": "trailer.mp4",
+      "duration_s": 14.03,
+      "window_s": 14.03,
+      "fps": 6,
+      "frames": 84,
+      "frames_expected": 84.2,
+      "meta_assert_ok": true,
+      "load_s": 3.98,
+      "packagings": [
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 1,
+          "grid": "1x1",
+          "empty_cells": 0,
+          "cell": [
+            800,
+            450
+          ],
+          "short_side": 450.0,
+          "nominal_short_side": 450.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 233.0,
+          "ok_short_side": true,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": true,
+          "distinct_frac": 1.0,
+          "distinct_ref": 0.107,
+          "distinct_verified": true,
+          "reasons": [],
+          "sheets": 84,
+          "total_tokens": 19572,
+          "median_min_dist": 1000000000.0
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 2,
+          "grid": "2x1",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            450
+          ],
+          "short_side": 400.0,
+          "nominal_short_side": 400.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.5,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 116.5,
+          "ok_short_side": true,
+          "ok_aspect": false,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.143,
+          "distinct_ref": 0.107,
+          "distinct_verified": true,
+          "reasons": [
+            "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+          ],
+          "sheets": 42,
+          "total_tokens": 9786,
+          "median_min_dist": 1.67
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 4,
+          "grid": "2x2",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            225
+          ],
+          "short_side": 225.0,
+          "nominal_short_side": 225.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 58.25,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.107,
+          "distinct_ref": 0.107,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 225px < 300px"
+          ],
+          "sheets": 21,
+          "total_tokens": 4893,
+          "median_min_dist": 1.13
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 8,
+          "grid": "3x3",
+          "empty_cells": 1,
+          "cell": [
+            267,
+            150
+          ],
+          "short_side": 150.0,
+          "nominal_short_side": 150.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 29.12,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.1,
+          "distinct_ref": 0.107,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 150px < 300px",
+            "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.100 < 0.107"
+          ],
+          "sheets": 11,
+          "total_tokens": 2563,
+          "median_min_dist": 0.69
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 16,
+          "grid": "4x4",
+          "empty_cells": 0,
+          "cell": [
+            200,
+            112
+          ],
+          "short_side": 112.5,
+          "nominal_short_side": 112.5,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 14.56,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.075,
+          "distinct_ref": 0.107,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 112px < 300px",
+            "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.075 < 0.107"
+          ],
+          "sheets": 6,
+          "total_tokens": 1398,
+          "median_min_dist": 0.65
+        }
+      ]
+    },
+    {
+      "clip": "mv195.mp4",
+      "duration_s": 194.92,
+      "window_s": 30.0,
+      "fps": 6,
+      "frames": 180,
+      "frames_expected": 180.0,
+      "meta_assert_ok": true,
+      "load_s": 1.41,
+      "packagings": [
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 1,
+          "grid": "1x1",
+          "empty_cells": 0,
+          "cell": [
+            800,
+            450
+          ],
+          "short_side": 450.0,
+          "nominal_short_side": 450.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 233.0,
+          "ok_short_side": true,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": true,
+          "distinct_frac": 1.0,
+          "distinct_ref": 0.622,
+          "distinct_verified": true,
+          "reasons": [],
+          "sheets": 180,
+          "total_tokens": 41940,
+          "median_min_dist": 1000000000.0
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 2,
+          "grid": "2x1",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            450
+          ],
+          "short_side": 400.0,
+          "nominal_short_side": 400.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.5,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 116.5,
+          "ok_short_side": true,
+          "ok_aspect": false,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.644,
+          "distinct_ref": 0.622,
+          "distinct_verified": true,
+          "reasons": [
+            "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+          ],
+          "sheets": 90,
+          "total_tokens": 20970,
+          "median_min_dist": 12.23
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 4,
+          "grid": "2x2",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            225
+          ],
+          "short_side": 225.0,
+          "nominal_short_side": 225.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 58.25,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.622,
+          "distinct_ref": 0.622,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 225px < 300px"
+          ],
+          "sheets": 45,
+          "total_tokens": 10485,
+          "median_min_dist": 11.05
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 8,
+          "grid": "3x3",
+          "empty_cells": 1,
+          "cell": [
+            267,
+            150
+          ],
+          "short_side": 150.0,
+          "nominal_short_side": 150.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 29.12,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.614,
+          "distinct_ref": 0.622,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 150px < 300px",
+            "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.614 < 0.622"
+          ],
+          "sheets": 23,
+          "total_tokens": 5359,
+          "median_min_dist": 11.05
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 16,
+          "grid": "4x4",
+          "empty_cells": 0,
+          "cell": [
+            200,
+            112
+          ],
+          "short_side": 112.5,
+          "nominal_short_side": 112.5,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 14.56,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.608,
+          "distinct_ref": 0.622,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 112px < 300px",
+            "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.608 < 0.622"
+          ],
+          "sheets": 12,
+          "total_tokens": 2796,
+          "median_min_dist": 11.05
+        }
+      ]
+    },
+    {
+      "clip": "mv227.mp4",
+      "duration_s": 227.2,
+      "window_s": 30.0,
+      "fps": 6,
+      "frames": 180,
+      "frames_expected": 180.0,
+      "meta_assert_ok": true,
+      "load_s": 4.16,
+      "packagings": [
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 1,
+          "grid": "1x1",
+          "empty_cells": 0,
+          "cell": [
+            800,
+            450
+          ],
+          "short_side": 450.0,
+          "nominal_short_side": 450.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 233.0,
+          "ok_short_side": true,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": true,
+          "distinct_frac": 1.0,
+          "distinct_ref": 0.039,
+          "distinct_verified": true,
+          "reasons": [],
+          "sheets": 180,
+          "total_tokens": 41940,
+          "median_min_dist": 1000000000.0
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 2,
+          "grid": "2x1",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            450
+          ],
+          "short_side": 400.0,
+          "nominal_short_side": 400.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.5,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 116.5,
+          "ok_short_side": true,
+          "ok_aspect": false,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.078,
+          "distinct_ref": 0.039,
+          "distinct_verified": true,
+          "reasons": [
+            "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+          ],
+          "sheets": 90,
+          "total_tokens": 20970,
+          "median_min_dist": 0.54
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 4,
+          "grid": "2x2",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            225
+          ],
+          "short_side": 225.0,
+          "nominal_short_side": 225.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 58.25,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.039,
+          "distinct_ref": 0.039,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 225px < 300px"
+          ],
+          "sheets": 45,
+          "total_tokens": 10485,
+          "median_min_dist": 0.47
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 8,
+          "grid": "3x3",
+          "empty_cells": 1,
+          "cell": [
+            267,
+            150
+          ],
+          "short_side": 150.0,
+          "nominal_short_side": 150.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 29.12,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.011,
+          "distinct_ref": 0.039,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 150px < 300px",
+            "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.011 < 0.039"
+          ],
+          "sheets": 23,
+          "total_tokens": 5359,
+          "median_min_dist": 0.46
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 16,
+          "grid": "4x4",
+          "empty_cells": 0,
+          "cell": [
+            200,
+            112
+          ],
+          "short_side": 112.5,
+          "nominal_short_side": 112.5,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 14.56,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.0,
+          "distinct_ref": 0.039,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 112px < 300px",
+            "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.000 < 0.039"
+          ],
+          "sheets": 12,
+          "total_tokens": 2796,
+          "median_min_dist": 0.46
+        }
+      ]
+    },
+    {
+      "clip": "fanren184.mp4",
+      "duration_s": 1733.9,
+      "window_s": 30.0,
+      "fps": 6,
+      "frames": 180,
+      "frames_expected": 180.0,
+      "meta_assert_ok": true,
+      "load_s": 3.96,
+      "packagings": [
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 1,
+          "grid": "1x1",
+          "empty_cells": 0,
+          "cell": [
+            800,
+            450
+          ],
+          "short_side": 450.0,
+          "nominal_short_side": 450.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 233.0,
+          "ok_short_side": true,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": true,
+          "distinct_frac": 1.0,
+          "distinct_ref": 0.656,
+          "distinct_verified": true,
+          "reasons": [],
+          "sheets": 180,
+          "total_tokens": 41940,
+          "median_min_dist": 1000000000.0
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 2,
+          "grid": "2x1",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            450
+          ],
+          "short_side": 400.0,
+          "nominal_short_side": 400.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.5,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 116.5,
+          "ok_short_side": true,
+          "ok_aspect": false,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.733,
+          "distinct_ref": 0.656,
+          "distinct_verified": true,
+          "reasons": [
+            "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+          ],
+          "sheets": 90,
+          "total_tokens": 20970,
+          "median_min_dist": 11.46
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 4,
+          "grid": "2x2",
+          "empty_cells": 0,
+          "cell": [
+            400,
+            225
+          ],
+          "short_side": 225.0,
+          "nominal_short_side": 225.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 58.25,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": true,
+          "ok": false,
+          "distinct_frac": 0.656,
+          "distinct_ref": 0.656,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 225px < 300px"
+          ],
+          "sheets": 45,
+          "total_tokens": 10485,
+          "median_min_dist": 10.15
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 8,
+          "grid": "3x3",
+          "empty_cells": 1,
+          "cell": [
+            267,
+            150
+          ],
+          "short_side": 150.0,
+          "nominal_short_side": 150.0,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 29.12,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.642,
+          "distinct_ref": 0.656,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 150px < 300px",
+            "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.642 < 0.656"
+          ],
+          "sheets": 23,
+          "total_tokens": 5359,
+          "median_min_dist": 9.8
+        },
+        {
+          "canvas": [
+            800,
+            450
+          ],
+          "pack": 16,
+          "grid": "4x4",
+          "empty_cells": 0,
+          "cell": [
+            200,
+            112
+          ],
+          "short_side": 112.5,
+          "nominal_short_side": 112.5,
+          "effective_size": [
+            800,
+            450
+          ],
+          "shrunk_by_token_cap": false,
+          "aspect_error": 0.0,
+          "tokens_per_sheet": 233,
+          "tokens_per_frame": 14.56,
+          "ok_short_side": false,
+          "ok_aspect": true,
+          "ok_distinct": false,
+          "ok": false,
+          "distinct_frac": 0.619,
+          "distinct_ref": 0.656,
+          "distinct_verified": true,
+          "reasons": [
+            "A3-1 FAIL: 每格短边 112px < 300px",
+            "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降；实测 0.619 < 0.656"
+          ],
+          "sheets": 12,
+          "total_tokens": 2796,
+          "median_min_dist": 9.71
+        }
+      ]
+    }
+  ],
+  "layout_sha256_16": "2559f00eca5d9797",
+  "fields": [
+    "aspect_error",
+    "canvas",
+    "cell",
+    "distinct_frac",
+    "distinct_ref",
+    "distinct_verified",
+    "effective_size",
+    "empty_cells",
+    "grid",
+    "nominal_short_side",
+    "ok",
+    "ok_aspect",
+    "ok_distinct",
+    "ok_short_side",
+    "pack",
+    "reasons",
+    "short_side",
+    "shrunk_by_token_cap",
+    "tokens_per_frame",
+    "tokens_per_sheet"
+  ],
+  "design_table": [
+    {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 1,
+      "grid": "1x1",
+      "empty_cells": 0,
+      "cell": [
+        800,
+        450
+      ],
+      "short_side": 450.0,
+      "nominal_short_side": 450.0,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 233.0,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 2,
+      "grid": "2x1",
+      "empty_cells": 0,
+      "cell": [
+        400,
+        450
+      ],
+      "short_side": 400.0,
+      "nominal_short_side": 400.0,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.5,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 116.5,
+      "ok_short_side": true,
+      "ok_aspect": false,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+      ]
+    },
+    {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        400,
+        225
+      ],
+      "short_side": 225.0,
+      "nominal_short_side": 225.0,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 58.25,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 225px < 300px"
+      ]
+    },
+    {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 8,
+      "grid": "3x3",
+      "empty_cells": 1,
+      "cell": [
+        267,
+        150
+      ],
+      "short_side": 150.0,
+      "nominal_short_side": 150.0,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 29.12,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 150px < 300px",
+        "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 16,
+      "grid": "4x4",
+      "empty_cells": 0,
+      "cell": [
+        200,
+        112
+      ],
+      "short_side": 112.5,
+      "nominal_short_side": 112.5,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 14.56,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 112px < 300px",
+        "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 1,
+      "grid": "1x1",
+      "empty_cells": 0,
+      "cell": [
+        1066,
+        600
+      ],
+      "short_side": 600.0,
+      "nominal_short_side": 600.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0006,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 407.0,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 2,
+      "grid": "2x1",
+      "empty_cells": 0,
+      "cell": [
+        533,
+        600
+      ],
+      "short_side": 533.0,
+      "nominal_short_side": 533.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.5003,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 203.5,
+      "ok_short_side": true,
+      "ok_aspect": false,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+      ]
+    },
+    {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        533,
+        300
+      ],
+      "short_side": 300.0,
+      "nominal_short_side": 300.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0006,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 101.75,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 8,
+      "grid": "3x3",
+      "empty_cells": 1,
+      "cell": [
+        355,
+        200
+      ],
+      "short_side": 200.0,
+      "nominal_short_side": 200.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0006,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 50.88,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 200px < 300px",
+        "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 16,
+      "grid": "4x4",
+      "empty_cells": 0,
+      "cell": [
+        266,
+        150
+      ],
+      "short_side": 150.0,
+      "nominal_short_side": 150.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0006,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 25.44,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 150px < 300px",
+        "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1280,
+        720
+      ],
+      "pack": 1,
+      "grid": "1x1",
+      "empty_cells": 0,
+      "cell": [
+        1280,
+        720
+      ],
+      "short_side": 720.0,
+      "nominal_short_side": 720.0,
+      "effective_size": [
+        1280,
+        720
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 578,
+      "tokens_per_frame": 578.0,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1280,
+        720
+      ],
+      "pack": 2,
+      "grid": "2x1",
+      "empty_cells": 0,
+      "cell": [
+        640,
+        720
+      ],
+      "short_side": 640.0,
+      "nominal_short_side": 640.0,
+      "effective_size": [
+        1280,
+        720
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.5,
+      "tokens_per_sheet": 578,
+      "tokens_per_frame": 289.0,
+      "ok_short_side": true,
+      "ok_aspect": false,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+      ]
+    },
+    {
+      "canvas": [
+        1280,
+        720
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        640,
+        360
+      ],
+      "short_side": 360.0,
+      "nominal_short_side": 360.0,
+      "effective_size": [
+        1280,
+        720
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 578,
+      "tokens_per_frame": 144.5,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1280,
+        720
+      ],
+      "pack": 8,
+      "grid": "3x3",
+      "empty_cells": 1,
+      "cell": [
+        427,
+        240
+      ],
+      "short_side": 240.0,
+      "nominal_short_side": 240.0,
+      "effective_size": [
+        1280,
+        720
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 578,
+      "tokens_per_frame": 72.25,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 240px < 300px",
+        "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1280,
+        720
+      ],
+      "pack": 16,
+      "grid": "4x4",
+      "empty_cells": 0,
+      "cell": [
+        320,
+        180
+      ],
+      "short_side": 180.0,
+      "nominal_short_side": 180.0,
+      "effective_size": [
+        1280,
+        720
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 578,
+      "tokens_per_frame": 36.12,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 180px < 300px",
+        "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1600,
+        900
+      ],
+      "pack": 1,
+      "grid": "1x1",
+      "empty_cells": 0,
+      "cell": [
+        1600,
+        900
+      ],
+      "short_side": 900.0,
+      "nominal_short_side": 900.0,
+      "effective_size": [
+        1600,
+        900
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 882,
+      "tokens_per_frame": 882.0,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1600,
+        900
+      ],
+      "pack": 2,
+      "grid": "2x1",
+      "empty_cells": 0,
+      "cell": [
+        800,
+        900
+      ],
+      "short_side": 800.0,
+      "nominal_short_side": 800.0,
+      "effective_size": [
+        1600,
+        900
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.5,
+      "tokens_per_sheet": 882,
+      "tokens_per_frame": 441.0,
+      "ok_short_side": true,
+      "ok_aspect": false,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "保比例 FAIL: 格子比例误差 0.500 > 0.02"
+      ]
+    },
+    {
+      "canvas": [
+        1600,
+        900
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        800,
+        450
+      ],
+      "short_side": 450.0,
+      "nominal_short_side": 450.0,
+      "effective_size": [
+        1600,
+        900
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 882,
+      "tokens_per_frame": 220.5,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    {
+      "canvas": [
+        1600,
+        900
+      ],
+      "pack": 8,
+      "grid": "3x3",
+      "empty_cells": 1,
+      "cell": [
+        533,
+        300
+      ],
+      "short_side": 300.0,
+      "nominal_short_side": 300.0,
+      "effective_size": [
+        1600,
+        900
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 882,
+      "tokens_per_frame": 110.25,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-3 FAIL: pack=8 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    },
+    {
+      "canvas": [
+        1600,
+        900
+      ],
+      "pack": 16,
+      "grid": "4x4",
+      "empty_cells": 0,
+      "cell": [
+        400,
+        225
+      ],
+      "short_side": 225.0,
+      "nominal_short_side": 225.0,
+      "effective_size": [
+        1600,
+        900
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 882,
+      "tokens_per_frame": 55.12,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": false,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 225px < 300px",
+        "A3-3 FAIL: pack=16 > 现状 pack=4：组内邻居变多，distinct_frac 会降"
+      ]
+    }
+  ],
+  "cost_table_k200": {
+    "n_frames": 200,
+    "ok": true,
+    "distinct_verified": false,
+    "recommended": {
+      "canvas": [
+        1066,
+        600
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        533,
+        300
+      ],
+      "short_side": 300.0,
+      "nominal_short_side": 300.0,
+      "effective_size": [
+        1066,
+        600
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0006,
+      "tokens_per_sheet": 407,
+      "tokens_per_frame": 101.75,
+      "ok_short_side": true,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": true,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": []
+    },
+    "baseline": {
+      "canvas": [
+        800,
+        450
+      ],
+      "pack": 4,
+      "grid": "2x2",
+      "empty_cells": 0,
+      "cell": [
+        400,
+        225
+      ],
+      "short_side": 225.0,
+      "nominal_short_side": 225.0,
+      "effective_size": [
+        800,
+        450
+      ],
+      "shrunk_by_token_cap": false,
+      "aspect_error": 0.0,
+      "tokens_per_sheet": 233,
+      "tokens_per_frame": 58.25,
+      "ok_short_side": false,
+      "ok_aspect": true,
+      "ok_distinct": true,
+      "ok": false,
+      "distinct_frac": null,
+      "distinct_ref": null,
+      "distinct_verified": false,
+      "reasons": [
+        "A3-1 FAIL: 每格短边 225px < 300px"
+      ]
+    },
+    "cost": {
+      "sheets": 50,
+      "total_tokens": 20350,
+      "baseline_sheets": 50,
+      "baseline_tokens": 11650,
+      "sheet_delta": 0,
+      "token_delta_frac": 0.7468
+    },
+    "notes": [
+      "UNVER: 只有帧数没有帧矩阵 —— distinct_frac 未实测，A3-3 只按「pack ≤ 现状 pack」的单调性推理放行。",
+      "UNVER: 推荐组合的 distinct_frac 没有实测值，验收脚本必须拒绝打 PASS。"
+    ]
+  },
+  "conflict_table": {
+    "global_optimal_by_pack": {
+      "1": {
+        "canvas": [
+          523,
+          300
+        ],
+        "tokens": 192,
+        "tokens_per_frame": 192.0
+      },
+      "2": {
+        "canvas": [
+          1046,
+          300
+        ],
+        "tokens": 210,
+        "tokens_per_frame": 105.0
+      },
+      "3": {
+        "canvas": [
+          523,
+          900
+        ],
+        "tokens": 310,
+        "tokens_per_frame": 103.33
+      },
+      "4": {
+        "canvas": [
+          1046,
+          600
+        ],
+        "tokens": 392,
+        "tokens_per_frame": 98.0
+      },
+      "5": {
+        "canvas": [
+          523,
+          1500
+        ],
+        "tokens": 506,
+        "tokens_per_frame": 101.2
+      },
+      "6": {
+        "canvas": [
+          1046,
+          900
+        ],
+        "tokens": 574,
+        "tokens_per_frame": 95.67
+      },
+      "7": {
+        "canvas": [
+          523,
+          2100
+        ],
+        "tokens": 702,
+        "tokens_per_frame": 100.29
+      },
+      "8": {
+        "canvas": [
+          1046,
+          1200
+        ],
+        "tokens": 756,
+        "tokens_per_frame": 94.5
+      },
+      "9": {
+        "canvas": [
+          1569,
+          900
+        ],
+        "tokens": 860,
+        "tokens_per_frame": 95.56
+      },
+      "10": {
+        "canvas": [
+          1046,
+          1500
+        ],
+        "tokens": 938,
+        "tokens_per_frame": 93.8
+      },
+      "11": null,
+      "12": null,
+      "13": null,
+      "14": null,
+      "15": null,
+      "16": null
+    }
+  },
+  "distinct_curve": {
+    "1": {
+      "pack": 1,
+      "distinct_frac": 1.0,
+      "median_min_dist": 1000000000.0
+    },
+    "2": {
+      "pack": 2,
+      "distinct_frac": 0.548,
+      "median_min_dist": 9.18
+    },
+    "3": {
+      "pack": 3,
+      "distinct_frac": 0.514,
+      "median_min_dist": 8.33
+    },
+    "4": {
+      "pack": 4,
+      "distinct_frac": 0.509,
+      "median_min_dist": 8.24
+    },
+    "6": {
+      "pack": 6,
+      "distinct_frac": 0.493,
+      "median_min_dist": 7.87
+    },
+    "8": {
+      "pack": 8,
+      "distinct_frac": 0.489,
+      "median_min_dist": 7.78
+    },
+    "16": {
+      "pack": 16,
+      "distinct_frac": 0.48,
+      "median_min_dist": 7.61
+    }
+  },
+  "distinct_curve_scope": "fanren184 全量 10403 帧 @6fps（本轮实测）",
+  "anchor": {
+    "frames": 10403,
+    "pack4": 0.509,
+    "pack8": 0.489
+  },
+  "full_material": true
+}

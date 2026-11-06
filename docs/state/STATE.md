@@ -3,7 +3,7 @@
 > 一页全貌。**只记会让人改变决定的东西**，事实必须带锚点（路径/数字/命令输出）。
 > 更新时机见 `README.md`。立项书：`../../PROJECT-KF-EXTRACT.md`。
 
-**最后更新：2026-11-06（M0 开工）**
+**最后更新：2026-11-06（M0 完成 · M4 完成）**
 
 ---
 
@@ -18,12 +18,12 @@
 
 | # | 模块 | 状态 | 锚点 / 证据 |
 |---|---|---|---|
-| M0 | 评测器（钉死基线） | **pass** | `scripts/eval.py`（selftest 3/3）；四段素材全跑；原始数据 `docs/status/M0-fanren.json`；报告 `docs/status/M0-baseline.md` |
-| M1 | k-center v0 | pending | 原型在 `../../kc.py`（朴素贪心，1950帧×320 = 1.8s） |
-| M2 | 分块加速（30min） | pending | 未做；外推 43200 帧 ≈ 40s **未实测，不能当结论** |
-| M3 | 光流预处理（作距离度量改进） | pending | 原型 `../../mc2.py`；残差与运动 corr=0.575，需改进 |
-| M4 | 出图策略（每张几帧） | pending | 未做；A3 要求每格短边 ≥300px |
-| M5 | 端到端抽取器 + JSON 报告 | pending | 无 |
+| M0 | 评测器 + 基线 | **pass** | `scripts/eval.py`（selftest 3/3）；四段全跑；`M0-baseline.md`；`M0-fanren.json` |
+| M1 | k-center | **pass** | `src/kf/kcenter.py`；`test_kcenter.py` 10/10；`M1-bench.json`；收益番剧 **21–38%**；时间覆盖 **10/10** |
+| M2 | 加速 | **pass** | `src/kf/fast.py`（O1–O6 逐条证明不改数字）；**1096s → 98–135s**；基线 **8/8 逐位不变**；RSS 311MB |
+| M3 | 光流距离 | **pass（验证性）** | `src/kf/flow.py`；`test_flow.py` 24/24（3 纹理方向锚点）；覆盖改善 **78–89%**；**corr 0.474 仍混运动**；345s/30min 不能进生产 |
+| M4 | 出图策略 | **pass** | `src/kf/layout.py`；`test_layout.py` 8/8；达标 = **1066×600×4帧**（533×300）；代价 **+75% token** |
+| M5 | 端到端 CLI | **pass** | `scripts/kf_extract.py`；出原分辨率 PNG + `extract.json` |
 
 ---
 
@@ -60,7 +60,7 @@
 | B1 | **屏幕录制权限丢失**（与 M0-M5 无关，只影响备用包抓屏验证） | `screencapture -x` → `could not create image from display` | 需用户在系统设置勾选 |
 | R1 | **A4 不达标**：30min@6fps 实测 1050s，要求 ≤3min（超 5.8x） | `docs/status/M0-fanren.json` elapsed_s=1050.4 | M2 必须优化 |
 | R2 | **A1 指标在长素材上失效**：预算 10/15/20 需要 >2000 帧（封顶），ratio 无法跨素材比 | 同上 coverage | 需改判据（见下） |
-| R3 | A3（每格 ≥300px）与 A1/A2 可能冲突：格子大就要多出图 | 未实测 | — |
+| R3 | ~~A3（每格 ≥300px）与 A1/A2 可能冲突~~ **已量化**（D-015）：**不冲突**，A3-1 与 A3-3 可同时满足 —— 代价是 token **+74.7%**（只换画布 800×450→1066×600，帧数/张数/distinct_frac 全不变） | `docs/status/M4-report.md` §1.1；`bash scripts/accept_m4.sh` PASS | 已解决 |
 | R4 | 30fps 全帧（52017 帧）未测；6fps/12fps 已测 | — | — |
 
 ---
@@ -73,7 +73,7 @@
 3. **M1**：k-center v0 → 对照修好的 A1 + A2
 4. **M2**：把 1050s 降到 ≤180s → 对照 A4
 5. **M3**：光流作距离度量 → 对照 A1
-6. **M4**：出图策略 → 对照 A1+A2+A3 组合
+6. ~~**M4**：出图策略 → 对照 A1+A2+A3 组合~~ ✅ **已完成**（2026-11-06，`docs/status/M4-report.md`，见 D-015）
 
 ---
 
@@ -82,3 +82,23 @@
 - Python：`/Users/mac/kf-lab/venv`（含 numpy / cv2 / yt-dlp / mss）
 - ffmpeg：`/opt/homebrew/bin/ffmpeg`（本机 PATH 里没有，需全路径）
 - 注意：`~/.dsh/bin/ffmpeg` 是给 see-now 备用包用的软链
+
+---
+
+## 最终状态（2026-11-07 01:40）
+
+| 模块 | 状态 | 关键数字 |
+|---|---|---|
+| M0 评测器 + 基线 | **pass** | 四段素材；`M0-baseline.md` / `M0-fanren.json` |
+| M1 k-center | **pass** | 10/10 测试；收益 **番剧 21–38%**；时间覆盖 **10/10** |
+| M2 加速 | **pass** | **1096s → 98–135s（9.4×）**；基线 8/8 逐位不变；RSS 311MB |
+| M3 光流距离 | **pass（验证性）** | 覆盖改善 **78–89%**；方向锚点 3 纹理全过；**corr 0.474 仍混运动** |
+| M4 出图策略 | **pass** | 达标组合 **1066×600×4帧（533×300）**；代价 **+75% token** |
+| M5 端到端 CLI | **pass** | `scripts/kf_extract.py`，出原分辨率 PNG + JSON 报告 |
+
+**全链路验收**：`python3 scripts/probe_accept.py` → **M2/M3/M4 全部 PASS**
+
+**待决策（3 条）**：
+1. A3 达标要 +75% token —— 要不要做成 `--canvas auto|small|readable` 参数？
+2. 光流 345s/30min 不能进生产 —— 要不要走「先 scdet 切镜头，再镜头内光流」？（预计 12s）
+3. A2（组内真不同 ≥70%）归属应改到 M4 —— 立项书 §三分工写错了
