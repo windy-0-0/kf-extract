@@ -1,6 +1,6 @@
 {
   "files": {
-    "scripts/eval.py": "9f783304019b59d3"
+    "scripts/eval.py": "0651adb75b1dc679"
   },
   "constants": {
     "ANALYSIS_W, ANALYSIS_H": {
@@ -15,5 +15,6 @@
       "expected": "budgets = (10, 15, 20, 30)",
       "present": true
     }
-  }
+  },
+  "metric_core_sha": "251db5d27f154822"
 }

@@ -3,7 +3,7 @@
 > 一页全貌。**只记会让人改变决定的东西**，事实必须带锚点（路径/数字/命令输出）。
 > 更新时机见 `README.md`。立项书：`../../PROJECT-KF-EXTRACT.md`。
 
-**最后更新：2026-11-06（M0 完成 · M4 完成）**
+**最后更新：2026-11-07（产品化完成 · v0.2.0 已发布）**
 
 ---
 
@@ -23,7 +23,8 @@
 | M2 | 加速 | **pass** | `src/kf/fast.py`（O1–O6 逐条证明不改数字）；**1096s → 98–135s**；基线 **8/8 逐位不变**；RSS 311MB |
 | M3 | 光流距离 | **FAIL（判据不达标，如实判不可行）** | `src/kf/flow.py`；`test_flow.py` 24/24（3 纹理方向锚点）；**同标尺下选帧变差 +14.3%~+32.0%（四项全变差）**；**corr 0.513 仍混运动**；全帧率 325s 不能进生产。见 D-018 |
 | M4 | 出图策略 | **pass** | `src/kf/layout.py`；`test_layout.py` 8/8；达标 = **1066×600×4帧**（533×300）；代价 **+75% token** |
-| M5 | 端到端 CLI | **pass** | `scripts/kf_extract.py`；出原分辨率 PNG + `extract.json` |
+| M5 | 端到端 CLI | **pass** | `src/kf/cli.py`（`kf-extract` 命令）；出原分辨率 PNG + 拼图 + `extract.json` + `summary.md` |
+| M6 | **产品化** | **pass（v0.2.0）** | 新增 `procs.py`/`sheets.py`/`export.py`/`state.py`/`api.py`；`pip install kf-extract` 后任意目录可用；**124 条测试**；29min 实测 **85.1s**；中断响应 **0.02s**；续跑解码 **55.8s→0.0s**。见 D-022~D-026 |
 
 ---
 

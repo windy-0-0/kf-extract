@@ -37,13 +37,12 @@ import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / 'src'))
 
-from src.kf import layout as L                      # noqa: E402
-from src.kf import metrics                          # noqa: E402  （冻结口径，只读）
+from kf import layout as L                      # noqa: E402
+from kf import metrics                          # noqa: E402  （冻结口径，只读）
 
-FFMPEG = '/opt/homebrew/bin/ffmpeg'
-FPROBE = '/opt/homebrew/bin/ffprobe'
+from _ffresolve import FFMPEG, FPROBE
 CORPUS = ROOT / 'eval'
 CLIPS = ('trailer.mp4', 'mv195.mp4', 'mv227.mp4', 'fanren184.mp4')
 FROZEN_JSON = ROOT / 'docs' / 'status' / 'M0-fanren.json'

@@ -22,14 +22,14 @@ import sys
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 
 import numpy as np  # noqa: E402
 
-from src.kf import flow as F  # noqa: E402
-from src.kf.kcenter import kcenter  # noqa: E402
-from src.kf.metrics import ANALYSIS_H, ANALYSIS_W, load_gray, maxdist, uniform_idx  # noqa: E402
-from src.kf.report import (CORPUS, format_table, main as m05_main,  # noqa: E402
+from kf import flow as F  # noqa: E402
+from kf.kcenter import kcenter  # noqa: E402
+from kf.metrics import ANALYSIS_H, ANALYSIS_W, load_gray, maxdist, uniform_idx  # noqa: E402
+from kf.report import (CORPUS, format_table, main as m05_main,  # noqa: E402
                           material_rows, time_distribution)
 
 KS = (40, 80, 160, 320)
@@ -252,7 +252,7 @@ def run_drift_check(segs=(64, 128), ks=(40, 320)) -> dict:
 
 
 def relative_time(keys, n):
-    from src.kf.report import time_distribution
+    from kf.report import time_distribution
     return time_distribution(keys, n)
 
 

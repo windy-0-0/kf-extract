@@ -19,10 +19,18 @@ DIFF_DISTINCT = 8.0
 CHUNK_BUDGET_MB = 100
 
 
-def load_gray(path, sample_fps=None, ffmpeg='/opt/homebrew/bin/ffmpeg',
+def load_gray(path, sample_fps=None, ffmpeg=None,
               w=ANALYSIS_W, h=ANALYSIS_H) -> np.ndarray:
-    """抽成 w×h 灰度，返回 (n, w*h) float32"""
+    """抽成 w×h 灰度，返回 (n, w*h) float32
+
+    `ffmpeg=None` = 自动定位（见 `src/kf/procs.py`）。显式传路径仍然有效，
+    老调用点不受影响。**默认值不再是本机绝对路径** —— 那是「我这台机器能跑」，
+    不是「别人装完能跑」。
+    """
     import subprocess
+    if ffmpeg is None:
+        from .procs import find_ffmpeg
+        ffmpeg = find_ffmpeg()
     vf = ''
     if sample_fps:
         vf = f'fps={sample_fps},'

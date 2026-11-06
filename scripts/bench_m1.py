@@ -4,10 +4,10 @@
 输出：每段素材 × 每个 K 的 kcenter/uniform maxdist + 改善 + 时间覆盖率。
 """
 import argparse, json, sys, time, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'src'))
 import numpy as np
-from src.kf.metrics import load_gray
-from src.kf.kcenter import kcenter, compare_with_uniform, time_coverage
+from kf.metrics import load_gray
+from kf.kcenter import kcenter, compare_with_uniform, time_coverage
 
 CORPUS = [
     ('trailer',   'eval/trailer.mp4',   12),

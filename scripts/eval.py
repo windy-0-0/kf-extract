@@ -13,9 +13,15 @@ M0 基线评测器 —— 钉死三个基线，输出可复核 JSON。
 """
 import argparse, json, os, pathlib, subprocess, sys, time
 
-FF = os.environ.get('KF_FFMPEG', '/opt/homebrew/bin/ffmpeg')
-FP = os.environ.get('KF_FFPROBE', '/opt/homebrew/bin/ffprobe')
+_src = pathlib.Path(__file__).resolve().parent.parent / 'src'
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+from kf.procs import find_ffmpeg, find_ffprobe
 
+FF = find_ffmpeg()
+FP = find_ffprobe()
+
+# ---- METRIC-CORE-BEGIN（此段冻结：改它 = 改口径）----
 # 与立项书 §一 完全一致的口径：两帧 L1 距离 > DIFF_DISTINCT 才算「真正不同」
 DIFF_DISTINCT = 8.0
 ANALYSIS_W, ANALYSIS_H = 32, 18      # 分析分辨率（灰度），与已钉死的基线一致
@@ -201,6 +207,9 @@ def redundancy(X, pack):
         'distinct_frac': round(sum(uniq_frac) / (len(uniq_frac) * pack), 3),
         'median_min_dist': round(float(np.median(mind_all)), 2),
     }
+
+
+# ---- METRIC-CORE-END ----
 
 
 def scene_cuts(X, ratio=2.5, abs_min=2.0, min_gap=2):

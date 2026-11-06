@@ -85,7 +85,12 @@ from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-FF = os.environ.get('KF_FFMPEG', '/opt/homebrew/bin/ffmpeg')
+
+
+def _ff() -> str:
+    """ffmpeg 路径（惰性解析，跨平台）。保留 `FF` 这个名字是为兼容老调用点。"""
+    from .procs import find_ffmpeg
+    return find_ffmpeg()
 
 ANALYSIS_W, ANALYSIS_H = 32, 18
 D = ANALYSIS_W * ANALYSIS_H            # 576
@@ -124,6 +129,7 @@ def load_gray_uint8(path, sample_fps=None, hwaccel=False):
     tail = ['-v', 'error', '-i', str(path), '-vf', vf,
             '-f', 'rawvideo', '-pix_fmt', 'gray', '-']
     used = 'software'
+    FF = _ff()
     cmd = [FF] + tail
     if hwaccel:
         r = subprocess.run([FF, '-hwaccel', 'videotoolbox'] + tail,
@@ -387,7 +393,7 @@ if __name__ == '__main__':
 DUAL_FLOW_W, DUAL_FLOW_H = 96, 54
 
 
-def load_dual(path, sample_fps=None, ffmpeg=FF, hwaccel=True,
+def load_dual(path, sample_fps=None, ffmpeg=None, hwaccel=True,
               flow_w=DUAL_FLOW_W, flow_h=DUAL_FLOW_H):
     """一次解码，同时产出「给 k-center 的 32×18」与「给光流的 flow_w×flow_h」。
 
@@ -412,6 +418,7 @@ def load_dual(path, sample_fps=None, ffmpeg=FF, hwaccel=True,
                 '-map', '[b1]', '-f', 'rawvideo', '-pix_fmt', 'gray', pb]
         head = ['-v', 'error', '-i', str(path)]
         used = 'software'
+        FF = ffmpeg or _ff()
         if hwaccel:
             r = subprocess.run([FF, '-hwaccel', 'videotoolbox'] + head + base,
                                capture_output=True)

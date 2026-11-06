@@ -49,8 +49,8 @@ fi
 echo
 echo "--- A3-1 · 每格短边 >= 300px（4 帧/张）"
 a31=$("$PY" - <<'PY'
-import sys; sys.path.insert(0, '.')
-from src.kf.layout import plan, accept_line, MIN_SHORT_SIDE
+import sys; sys.path.insert(0, 'src')
+from kf.layout import plan, accept_line, MIN_SHORT_SIDE
 p = plan(200, distinct_table={4: 0.509, 8: 0.489})
 r = p.recommended
 if r is None:
@@ -74,8 +74,8 @@ fi
 echo
 echo "--- A3-2 · 代价量化（同一段素材要发几张图 / 总 token）"
 if a32=$("$PY" - <<'PY'
-import sys; sys.path.insert(0, '.')
-from src.kf.layout import plan
+import sys; sys.path.insert(0, 'src')
+from kf.layout import plan
 p0 = plan(200, distinct_table={4: 0.509})
 r0, b0 = p0.recommended, p0.baseline
 for K in (200, 2601, 10403):
@@ -107,9 +107,9 @@ fi
 echo
 echo "--- A3-3 · distinct_frac 不许比现状降低（锚点 pack4 = 0.509）"
 a33=$("$PY" - <<'PY'
-import json, sys, pathlib; sys.path.insert(0, '.')
-from src.kf import metrics
-from src.kf.layout import plan, BASELINE_PACK, BASELINE_DISTINCT_FRAC
+import json, sys, pathlib; sys.path.insert(0, 'src')
+from kf import metrics
+from kf.layout import plan, BASELINE_PACK, BASELINE_DISTINCT_FRAC
 
 # (a) 外部绝对锚点：冻结文件里 fanren184@6fps pack4 必须还是 0.509
 frozen = pathlib.Path('docs/status/M0-fanren.json')
@@ -186,8 +186,8 @@ fi
 echo
 echo "--- 反向样本 1 · 8 帧 / 800×450 → 必须 FAIL"
 r1=$("$PY" - <<'PY'
-import sys; sys.path.insert(0, '.')
-from src.kf.layout import make_candidate, accept_line, Constraints, MIN_SHORT_SIDE
+import sys; sys.path.insert(0, 'src')
+from kf.layout import make_candidate, accept_line, Constraints, MIN_SHORT_SIDE
 c = make_candidate((800, 450), 8, Constraints(), distinct_table={4: 0.509})
 print(accept_line(c))
 print('SHORT', c.short_side, 'MIN', MIN_SHORT_SIDE, 'OK', c.ok)
@@ -201,8 +201,8 @@ echo "$r1" | grep -q 'SHORT 150.0 MIN 300 OK False' || note_fail "反向样本 1
 echo
 echo "--- 反向样本 2 · 1 帧 / 800×450 → 必须 PASS 且报 token 浪费"
 r2=$("$PY" - <<'PY'
-import sys; sys.path.insert(0, '.')
-from src.kf.layout import plan, make_candidate, accept_line, Constraints
+import sys; sys.path.insert(0, 'src')
+from kf.layout import plan, make_candidate, accept_line, Constraints
 solo = make_candidate((800, 450), 1, Constraints(), distinct_table={4: 0.509})
 print(accept_line(solo))
 p = plan(200, distinct_table={4: 0.509})

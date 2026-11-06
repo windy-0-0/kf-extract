@@ -38,11 +38,11 @@ MODE="${1:-}"
 baseline_check() {
   $PY - <<'EOF'
 import json, sys
-sys.path.insert(0, '.')
+sys.path.insert(0, 'src')
 import importlib.util
 spec = importlib.util.spec_from_file_location('ev', 'scripts/eval.py')
 ev = importlib.util.module_from_spec(spec); spec.loader.exec_module(ev)
-from src.kf.fast import evaluate_fast
+from kf.fast import evaluate_fast
 
 FROZEN = {10: (14, 100), 15: (7, 14), 20: (6, 12), 30: (4, 5)}
 got = evaluate_fast('eval/trailer.mp4', sample_fps=12)
@@ -75,7 +75,7 @@ EOF
 selftest_red() {
   $PY - <<'EOF'
 import sys
-sys.path.insert(0, '.')
+sys.path.insert(0, 'src')
 import importlib.util
 spec = importlib.util.spec_from_file_location('ev', 'scripts/eval.py')
 ev = importlib.util.module_from_spec(spec); spec.loader.exec_module(ev)

@@ -13,14 +13,18 @@ import pathlib
 import subprocess
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'src'))
+
+from kf.procs import find_ffmpeg
+
+_FFMPEG = find_ffmpeg()
 import numpy as np                                                    # noqa: E402
-from src.kf.layout import (plan, accept_line, grid_for, image_tokens,  # noqa: E402
+from kf.layout import (plan, accept_line, grid_for, image_tokens,  # noqa: E402
                            optimal_canvas, make_candidate, Constraints,
                            MIN_SHORT_SIDE, BASELINE_CANVAS, BASELINE_PACK, Candidate)
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-FFMPEG = '/opt/homebrew/bin/ffmpeg'
+FFMPEG = _FFMPEG
 
 DISTINCT = {4: 0.509, 8: 0.489}
 
@@ -312,7 +316,7 @@ def test_measured_4frame_sheet_geometry():
 
 def test_canvas_profiles_exist():
     """三档都要能建出来，且成本递增。"""
-    from src.kf.layout import CANVAS_PROFILES, constraints_for
+    from kf.layout import CANVAS_PROFILES, constraints_for
     assert set(CANVAS_PROFILES) == {'cheap', 'readable', 'max'}
     for prof in CANVAS_PROFILES:
         c = constraints_for(prof)
@@ -321,7 +325,7 @@ def test_canvas_profiles_exist():
 
 def test_canvas_profile_costs_increase():
     """成本必须单调：cheap < readable < max（同一个 K）。"""
-    from src.kf.layout import constraints_for
+    from kf.layout import constraints_for
     toks = []
     for prof in ('cheap', 'readable', 'max'):
         lp = plan(80, constraints=constraints_for(prof), distinct_table=DISTINCT)
@@ -334,7 +338,7 @@ def test_canvas_profile_costs_increase():
 
 def test_baseline_independent_of_profile():
     """baseline 必须与所选档位无关 —— 它永远代表「现状」。"""
-    from src.kf.layout import constraints_for
+    from kf.layout import constraints_for
     bases = []
     for prof in ('cheap', 'readable', 'max'):
         lp = plan(80, constraints=constraints_for(prof), distinct_table=DISTINCT)
@@ -346,7 +350,7 @@ def test_baseline_independent_of_profile():
 def test_threshold_comes_from_candidate():
     """R99 横向：cheap 档 225px 必须 PASS（它的阈值是 0），
     readable 档同样 225px 必须 FAIL（阈值 300）。"""
-    from src.kf.layout import constraints_for, make_candidate
+    from kf.layout import constraints_for, make_candidate
     cheap_c = make_candidate((800, 450), 4, constraints_for('cheap'), distinct_table=DISTINCT)
     read_c = make_candidate((800, 450), 4, constraints_for('readable'), distinct_table=DISTINCT)
     assert accept_line(cheap_c).startswith('PASS'), accept_line(cheap_c)
@@ -354,7 +358,7 @@ def test_threshold_comes_from_candidate():
 
 
 def test_unknown_profile_raises():
-    from src.kf.layout import constraints_for
+    from kf.layout import constraints_for
     try:
         constraints_for('nope')
     except ValueError as e:

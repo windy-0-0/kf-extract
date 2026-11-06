@@ -1,78 +1,82 @@
-# KF-Extract · 把一段动画压成"够用就好"的关键帧
+# KF-Extract · 把一段视频压成"够用就好"的关键帧
 
-> 29 分钟的番剧 → **145 秒** → **80 张 1920×1080**，帧与帧之间**最长空白 47 秒**。
-> 不是"每秒抽一帧"，是**先算哪几帧值得看，再只留那几帧**。
+> 29 分钟的番剧 → **85 秒** → **80 张原画质帧 + 20 张拼图**，
+> 帧与帧之间**最长空白 47 秒**，送进模型只要 **8140 token**。
+> 不是"每隔几秒截一张"，是**先算哪几帧值得看，再只留那几帧**。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Tests](https://img.shields.io/badge/tests-79%20passing-brightgreen)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![Tests](https://img.shields.io/badge/tests-124%20passing-brightgreen)
+![ffmpeg](https://img.shields.io/badge/ffmpeg-required-orange)
 
 ---
 
-## 它解决什么
-
-给多模态模型看一段视频，最直觉的做法是「定时截帧喂过去」。两个死结：
-
-| 做法 | 问题 |
-|---|---|
-| 每秒 1 帧 | 24 分钟番剧 = 1440 张图 ≈ **33.6 万 token**，而且**大半是重复画面** |
-| 每 30 秒 1 帧 | 中间剧情全丢了，模型只会说「看起来你在看番」 |
-
-本项目换了个问题：**不问「画面变了没有」，问「哪几帧能让整段被覆盖住」**。
-
-- 选出 K 帧，使「任意一帧到离它最近的选中帧」的**最大距离最小**
-  （这是 facility location / k-center 问题）
-- 同时约束**时间分布**：不许出现「跳过两分钟剧情」的长空白
-
----
-
-## 快速开始
+## 30 秒跑起来
 
 ```bash
-git clone <this-repo> && cd kf-extract
-python3 -m venv venv && venv/bin/pip install numpy opencv-python-headless
-
-# 需要 ffmpeg（macOS: brew install ffmpeg）
-venv/bin/python scripts/kf_extract.py 你的视频.mp4 --k 80 --out shots/
+pip install kf-extract
+kf-extract 你的视频.mp4 --k 80
 ```
+
+就这样。不需要克隆仓库，不需要装 GPU，不需要配 Python 环境变量。
+
+> **需要 ffmpeg**（命令行版）。macOS `brew install ffmpeg`，
+> Ubuntu `sudo apt install ffmpeg`，Windows `winget install Gyan.FFmpeg`。
+> 装完 `ffmpeg -version` 能跑就行。找不到时工具会打印三个平台的确切命令，
+> 并以**退出码 3**告诉你"这是环境问题，不是素材问题"。
 
 输出：
 
 ```
 shots/
-├── frame-00000.png … frame-00079.png   # 原分辨率的关键帧
-└── extract.json                        # 可复核报告
+├── frame-00000.png … frame-00079.png   # 80 张原分辨率关键帧
+├── sheet-000.jpg … sheet-019.jpg       # 20 张拼图（每张 4 帧，带时间戳）
+├── extract.json                        # 可复核的全部数字
+└── summary.md                          # 30 秒读完的摘要
 ```
 
-`extract.json` 里每一个数字都是实测的，没有估算：
-
-```json
-{
-  "selected_k": 80,
-  "maxdist": 43.4,              // 覆盖质量：最"没人管"的那一帧离最近关键帧多远
-  "max_gap_sec": 47.2,          // 时间空白：相邻两张关键帧最大隔多久
-  "median_gap_sec": 2.8,
-  "time_coverage": {"buckets_hit": 10, "buckets": 10, "imbalance": 1.8},
-  "balance": 0.3,               // 时间均衡权重
-  "canvas_plan": { }            // 出图预算（每张几帧、多少 token）
-}
-```
+**先看 `summary.md`**，它已经把该看的东西排好了。
 
 ---
 
-## 三个旋钮
+## 为什么需要它
 
-### 1. `--k` 抽多少帧（最直接的成本旋钮）
+给多模态模型看视频，最直觉的做法是"定时截帧喂过去"。两个死结：
 
-| K | 覆盖质量（maxdist，越小越好） | 说明 |
+| 做法 | 问题 |
+|---|---|
+| 每秒 1 帧 | 24 分钟番剧 = 1440 张图 ≈ **33.6 万 token**，且大半是重复画面 |
+| 每 30 秒 1 帧 | 中间剧情全丢，模型只会说"看起来你在看番" |
+
+本项目换了个问题：**不问"画面变了没有"，问"哪几帧能让整段被覆盖住"**。
+
+- 选出 K 帧，使"任意一帧到离它最近的选中帧"的**最大距离最小**
+  （facility location / k-center 问题）
+- 同时约束**时间分布**：不许出现"跳过两分钟剧情"的空白
+- 最后**拼成 4 格图集**：一张 1066×600 装 4 帧 = 407 token，
+  而同样 4 帧各自 1920×1080 = 3872 token（单张 968）—— **省 89.5%**
+
+---
+
+## 三个旋钮（都带实测数据）
+
+### 1. `--k` 抽多少帧
+
+| K | 覆盖质量（maxdist，越小越好） | 用在什么场景 |
 |---|---|---|
 | 40 | 46.5 | 粗看剧情 |
 | **80** | **42.1** | **推荐起点** |
 | 160 | 37.3 | 细看 |
 | 320 | 34.1 | 逐镜研究 |
 
-> 数字来自 29 分钟国漫实测。**K 翻倍，maxdist 只降 10% 左右** —— 边际很低，
-> 所以"多抽一倍"通常不划算。
+> 29 分钟国漫实测。**K 翻倍，maxdist 只降约 10%** —— 边际很低，
+> 所以"多抽一倍"通常不划算。这也是为什么默认建议 80。
+
+也可以不给 `--k`，改用盲区预算：
+
+```bash
+kf-extract 番剧.mp4 --budget 25     # 自动决定 K，让最大盲区 ≤ 25
+```
 
 ### 2. `--balance` 时间均衡（默认 0.3）
 
@@ -82,7 +86,7 @@ shots/
 | **`0.3`（默认）** | **空白降 45%（番剧降 76%），覆盖只降 3%** |
 | `0.5` | 更强均衡，覆盖降 8–15% |
 
-### 3. `--canvas` 出图预算
+### 3. `--canvas` 出图档位
 
 | 档 | 画布 | 每格 | token/张 | 相对基线 |
 |---|---|---|---|---|
@@ -91,23 +95,61 @@ shots/
 | `max` | 1280×720 | 640×360 | 578 | +148% |
 
 **默认取 `readable` 的理由是实测的**：同一批帧，400×225 平均认出 10.5 个字，
-533×300 认到 17.0 个字（**+62%**），而 token 只多 75% —— **边际约 1:1，值**。
+533×300 认到 17.0 个字（**+62%**），而 token 只多 75% —— 边际约 1:1，值。
+
+---
+
+## 作为库用
+
+```python
+import kf
+
+r = kf.extract('番剧.mp4', k=80, out='shots/')
+print(r.maxdist)           # 覆盖质量，属性访问也行
+print(r.keys_time_sec)     # 每帧的时间戳
+
+# 只要数字，不落盘
+r2 = kf.extract('番剧.mp4', k=40)
+print(r2.selected_k, r2.max_gap_sec)
+```
+
+- 返回的是 JSON 可序列化的 dict（子类，支持属性访问 + `.save()`）
+- 内部结构随便改，这个面孔不动 —— 所以请只依赖 `kf.extract`
+- 进度回调：`kf.extract(..., progress=lambda stage, frac, msg: ...)`
+
+---
+
+## 长跑不会白费
+
+29 分钟素材约 85 秒。这 85 秒里最常见的操作就是按 Ctrl-C。所以：
+
+```bash
+kf-extract 番剧.mp4 --k 80 --resume
+```
+
+| 行为 | 实测 |
+|---|---|
+| Ctrl-C 响应时间 | **0.02 秒** |
+| 中断后退出码 | **130**（不是 0，绝不谎报成功） |
+| 已完成的阶段 | 落盘保留（`--resume` 时解码耗时 **55.8s → 0.0s**） |
+| 改了参数再跑 | 指纹失效，自动重算（不会拿旧结果冒充新的）|
+| 中断时的产物 | 保留在目录，且报告标 `status: interrupted` |
+
+**改 K 之后同目录重跑不会留下孤儿文件**：`--k 40` 再 `--k 12`，
+目录里就只剩 12 张，旧拼图也清掉。（只删我们自己命名规则内的文件，
+你的其它文件一个都不碰。）
 
 ---
 
 ## 实测数据（六段素材，全部可复跑）
 
 > **素材去哪拿**：六段视频共 985MB，超过 GitHub 单文件 100MB 硬限，
-> 所以打包放在 [Releases](../../releases) 的附件 `eval-assets.zip`（985MB）。
-> 下载解压到 `eval/` 即可复跑全部数字；只看代码/用工具**不需要**下载素材。
+> 所以打包放在 [Releases](../../releases) 的附件 `eval-assets.zip`。
+> 下载解压到 `eval/` 即可复跑全部数字；**只看代码/用工具不需要下载素材**。
 >
 > ```bash
-> # 下完 eval-assets.zip 之后
 > unzip -o eval-assets.zip -d eval/
 > ```
-
-
-素材覆盖不同语言、不同画风、不同帧率：
 
 | 素材 | 时长 | 帧率 | 类型 |
 |---|---|---|---|
@@ -117,6 +159,18 @@ shots/
 | mv195 | 3.2 min | 60fps | 动画 MV |
 | mv227 | 3.8 min | 24fps | 动画 MV |
 | trailer | 0.2 min | 60fps | 番剧预告（快切） |
+
+### 端到端（29 分钟番剧，`--k 80`）
+
+| 指标 | 值 |
+|---|---|
+| 总耗时 | **85.1 秒** |
+| 解码（10403 帧） | 36.7 秒 |
+| 选帧 | 0.28 秒 |
+| 导 80 张原分辨率 PNG | 44.6 秒 |
+| 拼 20 张图集 | 3.3 秒 |
+| 最大时间空白 | 196.7 秒 → **47.2 秒**（−76%） |
+| 送模型总 token | **8140**（20 张 × 407） |
 
 ### 时间均衡的收益（`--balance 0.3`，六样本全测）
 
@@ -138,7 +192,7 @@ shots/
 
 ### 帧级冗余（为什么不能"每秒抽一帧"）
 
-| 选帧 | pack=4 的"真正不同"占比 |
+| 选帧方式 | pack=4 的"真正不同"占比 |
 |---|---|
 | 全部 10403 帧（29min） | **50.9%** |
 | 均匀 200 帧 | 99.0% |
@@ -151,14 +205,14 @@ shots/
 
 ## 它不做什么（提前说清）
 
-- ❌ **不做实时** —— 这是离线抽取工具
+- ❌ **不做实时** —— 离线抽取工具
 - ❌ **不做语音/字幕理解** —— 只处理画面
-- ❌ **不做"原画帧"精确检测** —— 见下方说明
+- ❌ **不做"原画帧"精确检测** —— 见下
 - ❌ **不需要 GPU**
 
 ### 关于「精准抽原画帧」
 
-如果你以为这个项目能识别动画里的**原画/作画帧**（"一拍二"的换画点），**它做不到，我们实测过**：
+如果你以为它能识别动画里的**原画/作画帧**（"一拍二"的换画点），**做不到，我们实测过**：
 
 | 素材 | 总帧 | 唯一画面 | 精确去重能省 |
 |---|---|---|---|
@@ -173,6 +227,18 @@ shots/
 
 要做原画级只能走**线稿域分离**（抽出线稿再去重），本项目没做。
 
+### 黑场会被选中，但会被说出来
+
+k-center 有时会选中一张**纯黑转场帧**（它确实"很不一样"，距离最远）。
+实测 29 分钟番剧里 80 帧中有 1–2 帧。它占掉 1/4 的图集容量，却不含信息。
+
+工具**不会自动删掉它**——整段夜景的片子、片尾黑屏，黑就是内容本身，
+自动剔除会误伤。但会写进 `summary.md` 的「需要你注意」，并给准确计数：
+
+```json
+"dark_frames": {"in_video": 9, "in_selection": 1, "selection_idx": [48]}
+```
+
 ---
 
 ## 我们的对比实验（诚实版）
@@ -184,16 +250,13 @@ shots/
 
 | 素材 | 见-now 式拼图里的"真不同"占比 |
 |---|---|
-| 番剧预告 14s | 1.8% |
+| 番剧预告 14s | 1.8%（最坏情况） |
 | 动画 MV 227s | 14.3% |
 | **真实番剧 29min** | **50.9%** |
 
-> 注意：短预告的 1.8% 是**最坏情况**。真实番剧是 50.9%，不是"99% 全是废帧"。
-> 我们最初用短素材得出"86–99% 重复"的结论，被更长的素材推翻了。
+> 我们最初用短素材得出"86–99% 重复"，被更长素材推翻了。
 
 ### k-center vs 均匀采样
-
-同 K 下，k-center 的最大盲区比均匀采样小多少：
 
 | 素材 | K=40 | K=80 | K=160 | K=320 |
 |---|---|---|---|---|
@@ -202,12 +265,10 @@ shots/
 | mv227 | 33% | 33% | 48% | 69% |
 | **真实番剧** | **38%** | **37%** | **21%** | **30%** |
 
-**真实番剧上只赢 21–38%**，不是宣传里常见的那种"省十倍"。
+**真实番剧上只赢 21–38%**，不是宣传里常见的"省十倍"。
 短 MV 能赢 91%，因为短素材镜头少、画面重复多。
 
-### 光流作距离度量 —— **我们试了，失败了**
-
-我们认为"用光流补偿后的残差当距离"能让 k-center 更准。**实测不行**：
+### 光流作距离度量 —— **试了，失败了**
 
 | K | 用 L1 选帧（L1 评分） | 用光流选帧（L1 评分） | 差 |
 |---|---|---|---|
@@ -227,33 +288,33 @@ shots/
 
 ```
 src/kf/
-├── metrics.py    距离与覆盖度量 —— **冻结**（所有历史数字的口径都在这）
-├── kcenter.py    M1 选帧：k-center / 时间均衡版
-├── fast.py       M2 加速：整数路径 + 并行 + 早停（同结果快 9.4×）
-├── flow.py       M3 光流（验证用，判据 FAIL，未接生产）
-├── layout.py     M4 出图预算：画布档位 / 每格短边 / token 账
+├── api.py        稳定公开 API（`kf.extract`）—— 唯一承诺不动的面孔
+├── cli.py        命令行入口（退出码 0/1/2/3/130）
+├── metrics.py    距离与覆盖度量 —— **冻结**（所有历史数字的口径）
+├── kcenter.py    选帧：k-center / 时间均衡版
+├── fast.py       加速：整数路径 + 并行 + 早停（同结果快 9.4×）
+├── layout.py     出图预算：画布档位 / 每格短边 / token 账
+├── sheets.py     拼图：4 格排版 + 时间戳烧字
+├── export.py     落盘：命名 / 幂等清理 / zip / 清单 / 摘要
+├── state.py      长跑：原子状态 + 指纹 + 断点续跑 + 信号处理
+├── procs.py      ffmpeg/ffprobe 跨平台定位（含降级）
+├── flow.py       光流（验证用，判据 FAIL，未接生产）
 └── report.py     M0.5 三列表（覆盖 / 分布 / 空档）
 ```
 
-命令行入口：`scripts/kf_extract.py`。
-
-> 早期的探索脚本不在版本库里（它们是一次性的，且含本地路径）。
-> 其中的结论已经沉淀进 `docs/state/DECISIONS.md`。
+`kf-extract` 命令和 `scripts/kf_extract.py` 都指向同一个 `cli.py`
+（后者是给老文档留的兼容垫片，不再维护第二份逻辑）。
 
 ### 为什么要"冻结"度量
 
 `metrics.py` 和 `scripts/eval.py` 里写着**所有历史数字的计算口径**
-（32×18 灰度、L1 均值、`>8` 才算"真正不同"）。
+（32×18 灰度、L1 均值、`>8` 才算"真正不同"）。改它们 = 所有已发布数字作废。
 
-改它们 = 所有已发布的数字作废。所以有 `scripts/freeze_baseline.py`：
+所以有 `scripts/freeze_baseline.py`：
 
 ```bash
 $ python3 scripts/freeze_baseline.py --check
 ✅ 基线未动
-# 或
-❌ 基线被动过：
-   scripts/eval.py: 9f783304… → fe95f262…
-   常量消失: DIFF_DISTINCT = 8.0
 ```
 
 **这个闸门真的救过一次**：我们想"优化"时把 uniform 二分换成 7 点阶梯，
@@ -264,31 +325,40 @@ $ python3 scripts/freeze_baseline.py --check
 ## 验收
 
 ```bash
-# 79 条单元测试
-for f in tests/kf/test_*.py; do venv/bin/python $f; done
+# 124 条测试
+for f in tests/kf/test_*.py; do python3 $f; done
 
 # 基线冻结检查
-venv/bin/python scripts/freeze_baseline.py --check
+python3 scripts/freeze_baseline.py --check
 
 # 三模块探针（含 selftest，证明闸门会红）
-venv/bin/python scripts/probe_accept.py
-venv/bin/python scripts/probe_accept.py --selftest
+python3 scripts/probe_accept.py
+python3 scripts/probe_accept.py --selftest
 ```
 
-| 测试 | 条数 |
-|---|---|
-| `test_kcenter.py` | 16 |
-| `test_fast.py` | 9 |
-| `test_flow.py` | 24 |
-| `test_layout.py` | 30 |
+| 测试文件 | 条数 | 覆盖什么 |
+|---|---|---|
+| `test_kcenter.py` | 18 | 选帧等价性、单调性、dtype 陷阱 |
+| `test_fast.py` | 9 | 加速与原路径逐位一致 |
+| `test_flow.py` | 24 | 光流方向锚点（含故意写错的反向函数）|
+| `test_layout.py` | 30 | 画布/格数/token 账 |
+| `test_sheets.py` | 10 | 排版、烧字、补边不拉伸、清理边界 |
+| `test_state.py` | 11 | 原子写、指纹失效、中断语义 |
+| `test_api.py` | 10 | 结果形状、不变量、时间戳对齐 |
+| `test_cli.py` | 12 | 退出码、参数校验、**旧产物清理** |
 
 ---
 
-## 环境
+## 环境与兼容
 
-- **Python** 3.10+，依赖只有 `numpy` 和 `opencv-python-headless`（只有光流模块用 cv2）
-- **ffmpeg / ffprobe** 必须在 PATH，或用 `KF_FFMPEG` / `KF_FFPROBE` 指定
-- **不需要 GPU**。硬解（`-hwaccel videotoolbox`）是可选加速，失败自动回退软解
+- **Python 3.9+**。硬依赖只有 `numpy`。
+- `pillow` 可选（更快，格式更多）；不装会退回 ffmpeg 读写图。
+- `opencv-python-headless` 只有 `flow.py` 用，默认路径不需要。
+- **ffmpeg 必需**，ffprobe 可选（缺它会降级解析并用 `warnings` 说明精度）。
+- `pip install imageio-ffmpeg` 能救**只缺 ffmpeg** 的情况；
+  但它**不带 ffprobe**（实测确认），缺 ffprobe 仍需系统安装。
+- 平台：macOS / Linux / Windows 都走同一套定位逻辑，无硬编码路径。
+- **不需要 GPU**。硬解（`-hwaccel videotoolbox`）是可选加速，失败自动回退软解。
 
 ---
 
@@ -298,24 +368,34 @@ venv/bin/python scripts/probe_accept.py --selftest
 
 但有一处例外必须说明：`src/kf/layout.py` 里的 **token 估算公式**移植自
 [dsh-see-now](https://github.com/SAOS-3624/dsh-see-now) 的 `src/tokens.js`（**Apache-2.0**）。
-Apache-2.0 不允许改授为 MIT，所以那一部分仍按 Apache-2.0 使用，
-详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+Apache-2.0 不允许改授为 MIT，所以那一部分仍按 Apache-2.0 使用
+（详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，内含我们尝试独立重写
+但证明不了等价的记录）。
 
 ---
 
 ## 项目状态
 
-**这是一个研究型工具，不是产品。**
+**可安装、可编程、长跑不丢工作的工具。**
 
-- 核心能力（选帧、加速、出图预算）已验证，79 条测试全绿
-- 光流那条路线已被实测否决，代码保留供参考
+已验证：
+
+- `pip install` 后从任意目录直接 `kf-extract` 可用（不依赖仓库结构）
+- 六段不同画风/帧率的素材，全部数字可复跑
+- 124 条测试全绿；基线冻结闸门 + 三模块探针都能变红
+- Ctrl-C / 断点续跑 / 参数变更失效 / 旧产物清理，全部实测
+
+已知边界：
+
 - 语料是 6 段公开动画素材，未覆盖真人实拍、监控、屏录
-- **没有 GUI**，只有 CLI
+- **没有 GUI**，只有 CLI 和库
+- 光流那条路线已被实测否决，代码保留供参考
 
 详细的决策过程、被推翻的方案、踩过的坑，全记在 [`docs/state/`](docs/state/)：
 
 - [`STATE.md`](docs/state/STATE.md) —— 一页看全貌
 - [`DECISIONS.md`](docs/state/DECISIONS.md) —— 决策日志，**含被推翻的**
 - [`RESEARCH.md`](docs/state/RESEARCH.md) —— 调研索引
+- [`PRODUCT.md`](docs/PRODUCT.md) —— 产品化做了什么、为什么
 
-> 我们刻意把失败记进去：**下一次不会有人重复踩同一个坑**。
+> 我们刻意把失败记进去：**下一次不会有人重复踩同一个坑。**

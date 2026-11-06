@@ -1,10 +1,10 @@
 """M1 测试：等价性 + 边界 + 单调性 + 覆盖。"""
 import sys, pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'src'))
 import numpy as np
-from src.kf.kcenter import (kcenter, kcenter_balanced, need_for_budget,
+from kf.kcenter import (kcenter, kcenter_balanced, need_for_budget,
                              budget_track, compare_with_uniform, time_coverage)
-from src.kf import metrics
+from kf import metrics
 
 rng = np.random.default_rng(0)
 
@@ -135,7 +135,7 @@ def test_balanced_reduces_max_gap():
     p = pathlib.Path('eval/mv227.mp4')
     if not p.exists():
         return          # 素材不在就跳过（CI 环境）
-    from src.kf.metrics import load_gray
+    from kf.metrics import load_gray
     X = load_gray(p, sample_fps=12)
     pure = kcenter_balanced(X, 80, fps=12, alpha=0.0)
     bal = kcenter_balanced(X, 80, fps=12, alpha=0.3)
@@ -175,6 +175,45 @@ def test_balanced_reports_gap_in_seconds():
     # 同样选帧，fps 翻倍 → 秒数减半
     assert abs(r6['max_gap_sec'] - 2 * r12['max_gap_sec']) < 1.0, (
         f'fps 换算不对: 6fps={r6["max_gap_sec"]}s 12fps={r12["max_gap_sec"]}s')
+
+
+def test_uint8_input_matches_float32():
+    """uint8 输入必须与 float32 给出**完全相同**的选帧结果。
+
+    这是产品化当天实测踩到的无声退化：流式解码器交 uint8（省 4× 内存），
+    而 `pairwise_l1` 的 `np.abs(a-b)` 在 uint8 上会无符号回绕
+    （`abs(uint8(3)-uint8(250)) == 9`，真实差 247），于是距离全错、选帧全错，
+    但**不报错、结果看着合理**。
+
+    实测差异：float32 md=13.86 / uint8 md=39.10（同一段视频同一 K）。
+    这条测试若变红，说明入口处的 dtype 归一化被删掉了。
+    """
+    rng2 = np.random.default_rng(11)
+    Xu = rng2.integers(0, 256, size=(60, 576), dtype=np.uint8)
+    a = kcenter_balanced(Xu, 10, fps=6, alpha=0.3)
+    b = kcenter_balanced(Xu.astype('float32'), 10, fps=6, alpha=0.3)
+    assert a['keys'] == b['keys'], f'uint8 选帧与 float32 不一致: {a["keys"]} vs {b["keys"]}'
+    assert abs(a['maxdist'] - b['maxdist']) < 1e-6, \
+        f'uint8 maxdist 与 float32 不一致: {a["maxdist"]} vs {b["maxdist"]}'
+    c = kcenter(Xu, 10)
+    d = kcenter(Xu.astype('float32'), 10)
+    assert c['keys'] == d['keys'], f'纯 kcenter 也不一致: {c["keys"]} vs {d["keys"]}'
+
+
+def test_uint8_wraparound_is_the_real_hazard():
+    """元断言：证明「uint8 会回绕」这件事本身是真的。
+
+    R18 的要求：样本驱动型测试必须带元断言自校验。这条不是测我们的代码，
+    是测「我们为什么要加那个 dtype 归一化」这个前提还成立。
+    如果哪天 numpy 改了 uint8 减法语义，这条会红，提示我们重新评估。
+    """
+    a = np.array([3], dtype=np.uint8)
+    b = np.array([250], dtype=np.uint8)
+    wrapped = int(np.abs(a - b)[0])
+    true_diff = int(abs(int(a[0]) - int(b[0])))
+    assert wrapped != true_diff, '前提失效：uint8 减法不再回绕'
+    assert wrapped == 9, f'回绕值不符预期（可能 numpy 版本变了）：{wrapped}'
+    assert true_diff == 247
 
 
 if __name__ == '__main__':

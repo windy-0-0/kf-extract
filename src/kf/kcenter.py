@@ -29,6 +29,29 @@ from .metrics import maxdist, pairwise_l1, uniform_idx
 
 
 # ---------------------------------------------------------------- 核心算法
+def _as_float(X) -> np.ndarray:
+    """把帧特征转成 float32。**这不是性能优化，是正确性要求。**
+
+    实测踩到（2026-11-07，产品化当天）：
+    新加的流式解码器交出的是 **uint8**（省内存），直接喂给 k-center 后
+    选帧结果**全错且完全正常的样子**：
+
+        float32 输入: keys=[0,24,40,47,55,58,69,83]  maxdist=13.86
+        uint8   输入: keys=[0,24,37,43,46,48,61,68]  maxdist=39.10   ← 无声退化
+
+    根因：`np.abs(a - b)` 在 uint8 上先做**无符号减法**再取绝对值，会回绕：
+    `abs(uint8(3) - uint8(250)) = 9`，而真实差是 247。于是「差得最远的帧」
+    被算成「几乎相同」，k-center 的每一步选择都建立在错的距离上。
+
+    这个 bug 最坏的地方是它**不报错、不崩、结果看着合理**——
+    只有把两条路径的数字并排放才看得见（19.1 分差 = maxdist 13.9 vs 39.1）。
+
+    所以在入口处统一 dtype。已实测：float32 路径与冻结基线逐位一致，
+    所以这不改变任何已发布的数字。
+    """
+    return X if X.dtype == np.float32 else np.asarray(X, dtype='float32')
+
+
 def _adapt(distance, X):
     """把两种距离接口统一成 `keys -> (n, |keys|)`。
 
@@ -65,6 +88,7 @@ def kcenter(X: np.ndarray, k: int, *, seed: int = 0,
     Returns:
         {'keys': [下标...], 'maxdist': float, 'coverage': 每帧到最近关键帧的距离}
     """
+    X = _as_float(X)
     n = len(X)
     if n == 0:
         raise ValueError('X 为空')
@@ -127,6 +151,7 @@ def kcenter_balanced(X: np.ndarray, k: int, *, fps: float = 1.0,
     Returns:
         {'keys', 'maxdist', 'coverage', 'max_gap_sec', 'median_gap_sec', 'alpha'}
     """
+    X = _as_float(X)
     n = len(X)
     if n == 0:
         raise ValueError('X 为空')

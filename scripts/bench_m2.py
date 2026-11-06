@@ -108,8 +108,8 @@ def baseline_breakdown(path: pathlib.Path, fps: int, watch_rss: bool) -> dict:
 def optimized_breakdown(path: pathlib.Path, fps: int, watch_rss: bool) -> dict:
     """调用 M2 加速评测；保留独立入口，避免量账和验收走不同代码。"""
     if str(ROOT) not in sys.path:
-        sys.path.insert(0, str(ROOT))
-    from src.kf.fast import evaluate_fast
+        sys.path.insert(0, str(ROOT / 'src'))
+    from kf.fast import evaluate_fast
 
     started = time.perf_counter()
     result = evaluate_fast(path, sample_fps=fps)

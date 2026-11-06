@@ -37,7 +37,6 @@ import subprocess
 
 import numpy as np
 
-FFMPEG = '/opt/homebrew/bin/ffmpeg'
 # 光流分析分辨率：160×90。方向/速度都在这档实测（见 M3-report.md §5）
 FLOW_W, FLOW_H = 160, 90
 # Farneback 参数：与 R-004 原型 mc2.py 同一组，便于和历史数字对齐
@@ -57,8 +56,9 @@ def _cv2():
 
 def load_gray_hw(path, sample_fps=None, w=FLOW_W, h=FLOW_H) -> np.ndarray:
     """抽成 (n, h, w) 灰度 float32（保留二维结构，光流需要）。"""
+    from .procs import find_ffmpeg
     vf = (f'fps={sample_fps},' if sample_fps else '') + f'scale={w}:{h},format=gray'
-    r = subprocess.run([FFMPEG, '-v', 'error', '-i', str(path), '-vf', vf,
+    r = subprocess.run([find_ffmpeg(), '-v', 'error', '-i', str(path), '-vf', vf,
                         '-f', 'rawvideo', '-pix_fmt', 'gray', '-'], capture_output=True)
     if r.returncode != 0:
         raise RuntimeError(f'ffmpeg failed: {r.stderr[:200]}')

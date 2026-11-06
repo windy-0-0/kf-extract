@@ -25,10 +25,10 @@ import sys
 import numpy as np
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 
-from src.kf import metrics                       # 冻结口径（只读）
-from src.kf import fast                          # 被测实现
+from kf import metrics                       # 冻结口径（只读）
+from kf import fast                          # 被测实现
 
 TRAILER = ROOT / 'eval' / 'trailer.mp4'
 D = 576
@@ -136,7 +136,7 @@ def test_unchunked_must_oom():
 import resource, sys
 import numpy as np
 sys.path.insert(0, %r)
-from src.kf import fast, metrics
+from kf import fast, metrics
 n, K = 10403, 300
 rng = np.random.default_rng(3)
 Xu = rng.integers(0, 256, size=(n, 576), dtype=np.uint8)
@@ -158,7 +158,7 @@ print(f'METRICS_EQUAL={same_ref}')
 # 3) 验收参数的算术证明：K=2000 不分块 float32 需要多少 GB
 print(f'AT_K2000_F32_GB={10403 * 2000 * 576 * 4 / 1024**3:.1f} > 16GB 物理内存 → 必 OOM')
 '''
-    r = subprocess.run([str(ROOT / 'venv' / 'bin' / 'python'), '-c', script % str(ROOT)],
+    r = subprocess.run([str(ROOT / 'venv' / 'bin' / 'python'), '-c', script % str(ROOT / 'src')],
                        capture_output=True, text=True, timeout=600, cwd=ROOT)
     out = r.stdout + r.stderr
     ok = ('RSS_OVER_2GB' in out) and ('BITS_EQUAL=True' in out) \

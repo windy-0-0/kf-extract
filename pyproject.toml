@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kf-extract"
+dynamic = ["version"]
+description = "从视频里选出覆盖最优的关键帧，并拼成图集 —— 给多模态模型看视频省 token"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+authors = [{ name = "kf-extract contributors" }]
+keywords = ["keyframe", "video", "multimodal", "token", "ffmpeg", "k-center"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Multimedia :: Video",
+  "Topic :: Scientific/Engineering :: Image Processing",
+  "Intended Audience :: Developers",
+]
+
+# **只有一个硬依赖**。ffmpeg 是可执行文件不是 Python 包，所以不在这里
+# （见 src/kf/procs.py：找不到时给出三个平台的安装命令 + imageio-ffmpeg 兜底）。
+dependencies = ["numpy>=1.22"]
+
+[project.optional-dependencies]
+# 图片读写：装了更快、支持更多格式；不装也能跑（退回 ffmpeg）
+image = ["pillow>=9"]
+# 只有 flow.py 需要（实验模块，结论是「不如直接用 k-center」，默认路径不用它）
+flow = ["opencv-python-headless>=4.5"]
+# 复跑全部评测（scripts/ 下的闸门）
+eval = ["pytest>=7"]
+# 全都装
+all = ["pillow>=9", "opencv-python-headless>=4.5", "imageio-ffmpeg>=0.4"]
+
+[project.urls]
+Homepage = "https://github.com/windy-0-0/kf-extract"
+Repository = "https://github.com/windy-0-0/kf-extract"
+Issues = "https://github.com/windy-0-0/kf-extract/issues"
+Changelog = "https://github.com/windy-0-0/kf-extract/releases"
+
+[project.scripts]
+kf-extract = "kf.cli:main"
+
+[tool.setuptools.dynamic]
+# 版本号的唯一来源是 src/kf/__init__.py 的 __version__。
+# 不在两处写版本 —— 两处写必然会漂移（实测：漏了这一段，安装出来的包版本是 0.0.0，
+# 用户 `pip show` 看到 0.0.0 却以为装到了新版）。
+version = { attr = "kf.__version__" }
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["kf*"]
+
+[tool.setuptools.package-data]
+kf = ["py.typed"]

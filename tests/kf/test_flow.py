@@ -10,14 +10,18 @@
 import pathlib
 import sys
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'src'))
+
+from kf.procs import find_ffmpeg
+
+_FFMPEG = find_ffmpeg()
 
 import numpy as np
 
-from src.kf import flow
-from src.kf.kcenter import kcenter
-from src.kf.metrics import load_gray, maxdist, uniform_idx
-from src.kf.report import time_distribution
+from kf import flow
+from kf.kcenter import kcenter
+from kf.metrics import load_gray, maxdist, uniform_idx
+from kf.report import time_distribution
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TRAILER = ROOT / 'eval/trailer.mp4'
@@ -83,7 +87,7 @@ def test_static_video_via_ffmpeg(tmp_path):
     """外部锚点：造一段真视频（纯黑 2s），残差与运动都该≈0。"""
     import subprocess
     out = tmp_path / 'black.mp4'
-    r = subprocess.run(['/opt/homebrew/bin/ffmpeg', '-v', 'error', '-f', 'lavfi',
+    r = subprocess.run([_FFMPEG, '-v', 'error', '-f', 'lavfi',
                         '-i', 'color=black:s=320x180:d=2', '-r', '12', str(out)],
                        capture_output=True, text=True)
     if r.returncode != 0 or not out.exists():

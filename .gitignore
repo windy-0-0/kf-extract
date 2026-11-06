@@ -19,3 +19,9 @@ sheets/*.png
 .DS_Store
 Thumbs.db
 legacy/
+
+# Python 打包产物（pip install . / python -m build 会生成）
+build/
+dist/
+*.egg-info/
+*.egg
