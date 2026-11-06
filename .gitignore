@@ -1,0 +1,11 @@
+# 素材不进 git（1GB，且是外部下载）
+eval/*.mp4
+eval/*.part
+# python venv
+venv/
+# 缓存
+__pycache__/
+*.pyc
+# 中间产物
+sheets/*.png
+.tmp/

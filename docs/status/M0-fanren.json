@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-11-06T22:58:51",
+  "distinct_threshold": 8.0,
+  "results": [
+    {
+      "file": "fanren184.mp4",
+      "meta": {
+        "width": 1920,
+        "height": 1080,
+        "fps": 30.0,
+        "duration_s": 1733.9,
+        "frames": 52017,
+        "anchor": "duration*fps(推算)"
+      },
+      "analysis": {
+        "sample_fps": 6,
+        "w": 32,
+        "h": 18
+      },
+      "frames_processed": 10403,
+      "frames_expected": 10403.4,
+      "meta_assert_ok": true,
+      "elapsed_s": 1050.4,
+      "coverage": {
+        "10": {
+          "kcenter": null,
+          "uniform": null,
+          "ratio": null,
+          "note": "超上限未达到预算"
+        },
+        "15": {
+          "kcenter": null,
+          "uniform": null,
+          "ratio": null,
+          "note": "超上限未达到预算"
+        },
+        "20": {
+          "kcenter": null,
+          "uniform": null,
+          "ratio": null,
+          "note": "超上限未达到预算"
+        },
+        "30": {
+          "kcenter": 638,
+          "uniform": null,
+          "ratio": null,
+          "note": "超上限未达到预算"
+        }
+      },
+      "redundancy": {
+        "pack4": {
+          "pack": 4,
+          "distinct_per_pack": 2.03,
+          "distinct_frac": 0.509,
+          "median_min_dist": 8.24
+        },
+        "pack8": {
+          "pack": 8,
+          "distinct_per_pack": 3.92,
+          "distinct_frac": 0.489,
+          "median_min_dist": 7.78
+        }
+      },
+      "scene_cuts": {
+        "count": 343,
+        "per_minute": 1.98
+      }
+    }
+  ]
+}
