@@ -1,0 +1,19 @@
+{
+  "files": {
+    "scripts/eval.py": "9f783304019b59d3"
+  },
+  "constants": {
+    "ANALYSIS_W, ANALYSIS_H": {
+      "expected": "32, 18",
+      "present": true
+    },
+    "DIFF_DISTINCT": {
+      "expected": "8.0",
+      "present": true
+    },
+    "budgets = (10, 15, 20, 30)": {
+      "expected": "budgets = (10, 15, 20, 30)",
+      "present": true
+    }
+  }
+}
