@@ -79,16 +79,40 @@ def load_frames_and_canonical():
     return X, canon
 
 
-def speed_report(seconds: float, frames: int) -> dict:
+def speed_report(seconds: float, frames: int, *, sample_fps: int = SAMPLE_FPS,
+                 full_fps: int = 24, a4_budget: float = 180.0) -> dict:
+    """光流速度的**诚实录账**。
+
+    踩过：第一版只看「10403 帧 / fps > 180 就报不达标」，于是 118 对/秒 时报出
+    「可以进生产」—— 而 10403 帧只是 **6fps 抽样**后的帧数，A4 的口径是
+    30min@24fps ≈ 43200 帧。速度够不够必须按**真实要处理多少帧**算，
+    并且**光流只是流水线里的一步**，不能拿「这一步 < 180s」冒充整条链达标。
+    """
     fps = frames / seconds if seconds > 0 else None
-    return {
-        'frames': frames, 'seconds': round(seconds, 1),
-        'fps': round(fps, 1) if fps else None,
-        # 生产判据：A4 要求 30min 素材端到端 ≤180s。这里只报光流这一步的占比。
-        'a4_budget_s': 180,
-        'verdict': ('不可进生产（光流一步就超 A4 预算）' if fps and 10403 / fps > 180
-                    else '可以进生产（光流一步在 A4 预算内）'),
-    }
+    full_frames = int(round(frames / sample_fps * full_fps)) if sample_fps else frames
+    out = {'frames': frames, 'seconds': round(seconds, 1),
+           'fps': round(fps, 1) if fps else None,
+           'sample_fps': sample_fps, 'full_rate_fps': full_fps,
+           'full_rate_frames': full_frames,
+           'a4_budget_s': a4_budget}
+    if not fps:
+        out['verdict'] = '无法判定（没有有效测速）'
+        return out
+    at_sample = frames / fps
+    at_full = full_frames / fps
+    out['flow_seconds_at_sample_rate'] = round(at_sample, 1)
+    out['flow_seconds_at_full_rate'] = round(at_full, 1)
+    out['share_of_a4_budget'] = round(at_sample / a4_budget * 100, 1)
+    # 判据：光流这一步在 6fps 抽样下必须留出一半预算给后面的 k-center 与出图
+    if at_sample > a4_budget * 0.5:
+        out['verdict'] = (f'不可进生产：光流一步就吃 {out["share_of_a4_budget"]}% 预算'
+                          f'（全帧率下要 {at_full:.0f}s = {at_full / a4_budget:.1f}x 预算）')
+    elif at_full > a4_budget:
+        out['verdict'] = (f'仅 6fps 抽样可行（{at_sample:.0f}s/{a4_budget:.0f}s），'
+                          f'全帧率不可行（{at_full:.0f}s = {at_full / a4_budget:.1f}x 预算）')
+    else:
+        out['verdict'] = f'可以进生产（全帧率 {at_full:.0f}s ≤ {a4_budget:.0f}s）'
+    return out
 
 
 # ---------------------------------------------------------------- 主实验
