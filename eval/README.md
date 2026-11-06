@@ -15,6 +15,17 @@
 | mv227 | 3.8 min | 24fps | 动画 MV |
 | trailer | 0.2 min | 60fps | 番剧预告 |
 
+## 怎么拿到素材
+
+视频不进 git（849MB 的单个文件超过 GitHub 的 100MB 硬限，且总体积近 1GB）。
+统一打包在 **Releases 的 `eval-assets.zip`**：
+
+```bash
+unzip -o eval-assets.zip -d eval/
+```
+
+只看代码或用自己的视频**不需要**这些素材。
+
 ## 自己复跑
 
 把视频放进本目录、按上表命名，然后：

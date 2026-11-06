@@ -97,6 +97,16 @@ shots/
 
 ## 实测数据（六段素材，全部可复跑）
 
+> **素材去哪拿**：六段视频共 985MB，超过 GitHub 单文件 100MB 硬限，
+> 所以打包放在 [Releases](../../releases) 的附件 `eval-assets.zip`（985MB）。
+> 下载解压到 `eval/` 即可复跑全部数字；只看代码/用工具**不需要**下载素材。
+>
+> ```bash
+> # 下完 eval-assets.zip 之后
+> unzip -o eval-assets.zip -d eval/
+> ```
+
+
 素材覆盖不同语言、不同画风、不同帧率：
 
 | 素材 | 时长 | 帧率 | 类型 |
