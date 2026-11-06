@@ -1,6 +1,6 @@
 # 最终交付报告 · 动漫关键帧抽取（KF-Extract）
 
-**2026-11-07**　仓库：`/Users/mac/kf-lab`　commit `65a18ac`
+**2026-11-07**　仓库：`.`　commit `65a18ac`
 
 ---
 

@@ -631,7 +631,7 @@ def accept_line(cand: Candidate) -> str:
 #   under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
 #   CONDITIONS OF ANY KIND, either express or implied.
 #
-# 来源路径（本机只读备份）：/Users/mac/dsh-hardening/backup-plugins/dsh-see-now/
+# 来源：dsh-see-now（github.com/SAOS-3624/dsh-see-now）
 #   - src/tokens.js   （token 公式：14px patch / 42px 格 / rows×(cols+1)+2 / 544² 地板 / 1024 上限）
 # 另参考（**未抄代码**，只借问题框架）：src/pack.js 的 DP 装箱。
 # 见 docs/status/M4-report.md §未做/降级。

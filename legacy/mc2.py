@@ -1,4 +1,4 @@
-import sys; sys.path.insert(0,'/Users/mac/kf-lab')
+import sys; sys.path.insert(0,'.')
 import numpy as np, cv2, subprocess
 FF='/opt/homebrew/bin/ffmpeg'
 def flows(path,W=160,H=90,fps=24):

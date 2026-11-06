@@ -14,13 +14,19 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-PY = '/Users/mac/kf-lab/venv/bin/python'
+PY = os.environ.get(
+    'KF_PY',
+    str(ROOT / ('venv/bin/python' if os.name != 'nt' else 'venv/Scripts/python.exe'))
+    if (ROOT / ('venv/bin/python' if os.name != 'nt' else 'venv/Scripts/python.exe')).exists()
+    else 'python3',
+)
 
 # 每个模块**允许**出现的文件（多一个就是越界）
 ALLOWED = {

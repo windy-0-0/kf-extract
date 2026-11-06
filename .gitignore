@@ -1,11 +1,21 @@
-# 素材不进 git（1GB，且是外部下载）
+# 评测素材（近 1GB，外部下载，不进版本库）
 eval/*.mp4
 eval/*.part
-# python venv
+eval/*.webm
+eval/*.mkv
+
+# Python
 venv/
-# 缓存
 __pycache__/
 *.pyc
+.pytest_cache/
+
 # 中间产物
-sheets/*.png
 .tmp/
+*.log
+sheets/*.png
+
+# 系统
+.DS_Store
+Thumbs.db
+legacy/

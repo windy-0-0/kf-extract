@@ -1,4 +1,4 @@
-import sys; sys.path.insert(0,'/Users/mac/kf-lab')
+import sys; sys.path.insert(0,'.')
 from core import load
 import numpy as np, cv2
 CLIP='/Users/mac/Downloads/Kars on X_ _Preview clip of the _Mahoutsukai no Yoru_ anime film featuring Alice shown at KYOMAF 2026. https___t.co_QOvWLhyZ2u https___t.co_kl9EsfBrnl_ _ X.mp4'

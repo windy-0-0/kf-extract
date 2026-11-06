@@ -1,4 +1,4 @@
-import sys; sys.path.insert(0,'/Users/mac/kf-lab')
+import sys; sys.path.insert(0,'.')
 from core import load
 import numpy as np
 

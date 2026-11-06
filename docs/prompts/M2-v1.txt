@@ -42,7 +42,7 @@
 
 **判准**：`python3 scripts/freeze_baseline.py --check` 必须一直是 ✅。
 
-**不许**：git commit、改 profile、装系统级工具、动 `/Users/mac/.dsh`。
+**不许**：git commit、改 profile、装系统级工具、动 `~/.dsh`。
 
 ---
 

@@ -72,7 +72,7 @@
 ```
 $ bash scripts/accept_m4.sh
 === M4 验收（出图策略）===
-python: /Users/mac/kf-lab/venv/bin/python
+python: venv/bin/python
 PASS: 交付物就位（src/kf/layout.py + scripts/bench_m4.py）
 ✅ 基线未动
 PASS: 基线未动
@@ -363,7 +363,7 @@ $ wc -l -c src/kf/layout.py tests/kf/test_layout.py scripts/bench_m4.py scripts/
 ## 附 · 可复现命令
 
 ```bash
-cd /Users/mac/kf-lab
+cd .
 python3 scripts/freeze_baseline.py --check      # ✅ 基线未动
 python3 tests/kf/test_layout.py                 # 25/25 passed
 python3 -m pytest tests/kf/test_layout.py -q    # 25 passed

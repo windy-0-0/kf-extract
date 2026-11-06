@@ -14,7 +14,7 @@ cd "$(dirname "$0")/.."
 
 # 用哪个解释器：优先 venv（项目环境），退回 python3（系统，也带 numpy）
 if [ -n "${KF_PYTHON:-}" ]; then PY="$KF_PYTHON"
-elif [ -x /Users/mac/kf-lab/venv/bin/python ]; then PY=/Users/mac/kf-lab/venv/bin/python
+elif [ -x "$ROOT/venv/bin/python" ]; then PY="$ROOT/venv/bin/python"
 else PY=$(command -v python3); fi
 
 echo "=== M4 验收（出图策略）==="

@@ -8,7 +8,11 @@
 # 任何一步失败即非零退出。输出一律 PASS:/FAIL: 开头，可复跑。
 set -uo pipefail
 cd "$(dirname "$0")/.."
-PY=/Users/mac/kf-lab/venv/bin/python
+# Python 解析：环境变量 → 仓库 venv → PATH 上的 python3
+if [ -n "${KF_PY:-}" ]; then PY="$KF_PY"
+elif [ -x "$PWD/venv/bin/python" ]; then PY="$PWD/venv/bin/python"
+elif [ -x "$(dirname "$0")/../venv/bin/python" ]; then PY="$(cd "$(dirname "$0")/../venv/bin/python" && pwd)"
+else PY=python3; fi
 
 echo "=== M2 验收 ==="
 

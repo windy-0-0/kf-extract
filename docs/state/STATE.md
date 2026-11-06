@@ -79,7 +79,7 @@
 
 ## 环境
 
-- Python：`/Users/mac/kf-lab/venv`（含 numpy / cv2 / yt-dlp / mss）
+- Python：`venv`（含 numpy / cv2 / yt-dlp / mss）
 - ffmpeg：`/opt/homebrew/bin/ffmpeg`（本机 PATH 里没有，需全路径）
 - 注意：`~/.dsh/bin/ffmpeg` 是给 see-now 备用包用的软链
 
