@@ -27,9 +27,10 @@ sys.path.insert(0, str(ROOT))
 import numpy as np  # noqa: E402
 
 from src.kf import flow as F  # noqa: E402
-from src.kf.kcenter import kcenter, time_coverage  # noqa: E402
+from src.kf.kcenter import kcenter  # noqa: E402
 from src.kf.metrics import ANALYSIS_H, ANALYSIS_W, load_gray, maxdist, uniform_idx  # noqa: E402
-from src.kf.report import CORPUS, format_table, main as m05_main, material_rows  # noqa: E402
+from src.kf.report import (CORPUS, format_table, main as m05_main,  # noqa: E402
+                          material_rows, time_distribution)
 
 KS = (40, 80, 160, 320)
 MATERIAL = ROOT / 'eval/fanren184.mp4'
@@ -128,8 +129,8 @@ def run_m3(ks=KS) -> dict:
         own_fl_uniform = float(d_flow(u).min(1).max())
         own_l1_imp = (own_l1_uniform - own_l1) / own_l1_uniform * 100
         own_fl_imp = (own_fl_uniform - own_fl) / own_fl_uniform * 100
-        tcl = time_coverage(keys_l1, n)
-        tcf = time_coverage(keys_fl, n)
+        tcl = time_distribution(keys_l1, n)
+        tcf = time_distribution(keys_fl, n)
 
         delta = (cross_fl_sel - cross_l1_sel) / cross_l1_sel * 100 if cross_l1_sel > 0 else None
         row = {
@@ -148,7 +149,9 @@ def run_m3(ks=KS) -> dict:
         print(f'{k:>4} | {cross_l1_sel:>9.2f} {cross_fl_sel:>10.2f} | {delta:>8.1f}% | '
               f'{own_l1:>8.2f}/{own_l1_imp:>5.1f}% '
               f'{own_fl:>6.2f}/{own_fl_imp:>5.1f}% | '
-              f'{tcl["buckets_hit"]}/10 {tcf["buckets_hit"]}/10', flush=True)
+              f'{tcl["buckets_hit"]}/10 {tcf["buckets_hit"]}/10  '
+              f'(maxseg L1 {tcl["max_bucket_share"] * 100:.0f}% / '
+              f'flow {tcf["max_bucket_share"] * 100:.0f}%)', flush=True)
 
     # ---- 判据（照抄任务书，不许事后改写）
     worst = max(r['cross_delta_pct'] for r in out['rows'] if r['cross_delta_pct'] is not None)
@@ -174,6 +177,59 @@ def run_m3(ks=KS) -> dict:
           f'{out["speed"]["seconds"]}s）→ {out["speed"]["verdict"]}')
     out['elapsed_s'] = round(time.time() - t_all, 1)
     return out
+
+
+def run_drift_check(segs=(64, 128), ks=(40, 320)) -> dict:
+    """漂移闸门：分段累积（段内复合、跨段不累积）能不能把「变差」收回来？
+
+    动机：全片累积位移场在 10403 帧上会漂到百像素量级，规范坐标里的「距离」被漂移主导。
+    分段累积把漂移上限压到段长 × 每帧位移。**用同一条冻结 L1 标尺打分**，才看得出收回来没有。
+    """
+    print('\n=== 漂移闸门（分段累积，同一 L1 标尺打分）===', flush=True)
+    X, _ = load_frames_and_canonical()
+    n = len(X)
+    flat = X.reshape(n, -1)
+    Xhw = X.reshape(n, ANALYSIS_H, ANALYSIS_W)
+    d_l1 = lambda keys: maxdist_matrix(flat, keys)
+    base = {k: float(d_l1(greedy(d_l1, k, n)[0]).min(1).max()) for k in ks}
+    out = {'baseline_l1': {str(k): round(v, 3) for k, v in base.items()}, 'segments': {}}
+
+    hi = F.load_gray_hw(MATERIAL, sample_fps=SAMPLE_FPS)
+    cv2 = F._cv2()
+    lo = np.stack([cv2.resize(f, (F.FLOW_W, F.FLOW_H), interpolation=cv2.INTER_AREA) for f in hi])
+    flows = np.stack([F.flow_field(lo[t], lo[t + 1]) for t in range(len(lo) - 1)])
+    flows[..., 0] *= ANALYSIS_W / F.FLOW_W
+    flows[..., 1] *= ANALYSIS_H / F.FLOW_H
+    flows = np.stack([np.stack([
+        cv2.resize(flows[t, ..., 0], (ANALYSIS_W, ANALYSIS_H), interpolation=cv2.INTER_LINEAR),
+        cv2.resize(flows[t, ..., 1], (ANALYSIS_W, ANALYSIS_H), interpolation=cv2.INTER_LINEAR)],
+        axis=-1) for t in range(len(flows))])
+
+    for seg in segs:
+        canon = np.empty_like(Xhw)
+        for s0 in range(0, n, seg):
+            e = min(n, s0 + seg)
+            canon[s0:e] = F.warp_stack_to_canonical(
+                Xhw[s0:e], F.accumulate_fields(flows[s0:e - 1]))
+        P = canon.reshape(n, -1)
+        d_flow = lambda keys: maxdist_matrix(P, keys)
+        rows = {}
+        for k in ks:
+            keys = greedy(d_flow, k, n)[0]
+            cross = float(d_l1(keys).min(1).max())
+            rows[str(k)] = {'cross_l1': round(cross, 3)
+                            , 'delta_pct': round((cross - base[k]) / base[k] * 100, 1),
+                            'time': relative_time(keys, n)}
+            print(f'  seg={seg} K={k}: L1 标尺 {cross:.2f} vs 基线 {base[k]:.2f} '
+                  f'({rows[str(k)]["delta_pct"]:+.1f}%)  时间 '
+                  f'{rows[str(k)]["time"]["buckets_hit"]}/10', flush=True)
+        out['segments'][str(seg)] = rows
+    return out
+
+
+def relative_time(keys, n):
+    from src.kf.report import time_distribution
+    return time_distribution(keys, n)
 
 
 def maxdist_matrix(P: np.ndarray, keys) -> np.ndarray:
@@ -221,6 +277,7 @@ def main() -> int:
 
     if a.m3 or a.all:
         result['m3'] = run_m3()
+        result['drift_check'] = run_drift_check()
 
     if a.json:
         p = pathlib.Path(a.json)
