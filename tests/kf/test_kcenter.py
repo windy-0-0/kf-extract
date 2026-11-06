@@ -2,7 +2,8 @@
 import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 import numpy as np
-from src.kf.kcenter import kcenter, need_for_budget, budget_track, compare_with_uniform, time_coverage
+from src.kf.kcenter import (kcenter, kcenter_balanced, need_for_budget,
+                             budget_track, compare_with_uniform, time_coverage)
 from src.kf import metrics
 
 rng = np.random.default_rng(0)
@@ -117,6 +118,63 @@ def test_time_coverage_hit_is_not_enough():
     # 而「每段 1 帧」是完美的
     perfect = time_coverage(list(range(0, 100, 10)), 100)
     assert perfect['imbalance'] == 1.0 == min(perfect['imbalance'], even['imbalance'], skew['imbalance'])
+
+
+
+
+
+def test_balanced_reduces_max_gap():
+    """核心断言：alpha=0.3 必须显著缩短最大空白。
+
+    **为什么不用合成样本**：合成「静场尾段」的帧间差异极小，
+    任何按内容覆盖的算法都不该给它帧 —— 那时代码没错，是样本不代表现实。
+    真实番剧的静场段仍有语义内容（对话、特写），像素差异小但必须被看到。
+    所以这条断言用**真实素材**，且只断言「真实数据上的方向」。
+    """
+    import pathlib
+    p = pathlib.Path('eval/mv227.mp4')
+    if not p.exists():
+        return          # 素材不在就跳过（CI 环境）
+    from src.kf.metrics import load_gray
+    X = load_gray(p, sample_fps=12)
+    pure = kcenter_balanced(X, 80, fps=12, alpha=0.0)
+    bal = kcenter_balanced(X, 80, fps=12, alpha=0.3)
+    assert bal['max_gap_sec'] < pure['max_gap_sec'], (
+        f'真实素材上均衡版空白应更短: {bal["max_gap_sec"]} vs {pure["max_gap_sec"]}')
+    if pure['maxdist'] > 0:
+        cost = bal['maxdist'] / pure['maxdist'] - 1
+        assert cost <= 0.25, f'覆盖代价 {cost:.1%} 超过 25%'
+
+
+def test_balanced_alpha0_equals_plain():
+    """alpha=0 必须与普通 kcenter 选同一批帧（不许「顺手改了」）。"""
+    rng = np.random.default_rng(2)
+    X = rng.random((120, 576)).astype('float32') * 255
+    a = kcenter_balanced(X, 20, fps=1, alpha=0.0)['keys']
+    b = kcenter(X, 20)['keys']
+    assert a == b, f'alpha=0 应与普通 kcenter 一致: {a[:5]} vs {b[:5]}'
+
+
+def test_balanced_edge_cases():
+    """k=1 / k=n / 单帧不许崩。"""
+    rng = np.random.default_rng(3)
+    X = rng.random((30, 576)).astype('float32') * 255
+    assert len(kcenter_balanced(X, 1, alpha=0.3)['keys']) == 1
+    assert len(kcenter_balanced(X, 30, alpha=0.3)['keys']) == 30
+    one = rng.random((1, 576)).astype('float32') * 255
+    r = kcenter_balanced(one, 5, alpha=0.3)
+    assert len(r['keys']) >= 1 and not np.isnan(r['maxdist'])
+
+
+def test_balanced_reports_gap_in_seconds():
+    """gap 必须按 fps 换算成秒（不是帧号）。"""
+    rng = np.random.default_rng(4)
+    X = rng.random((300, 576)).astype('float32') * 255
+    r6 = kcenter_balanced(X, 20, fps=6, alpha=0.3)
+    r12 = kcenter_balanced(X, 20, fps=12, alpha=0.3)
+    # 同样选帧，fps 翻倍 → 秒数减半
+    assert abs(r6['max_gap_sec'] - 2 * r12['max_gap_sec']) < 1.0, (
+        f'fps 换算不对: 6fps={r6["max_gap_sec"]}s 12fps={r12["max_gap_sec"]}s')
 
 
 if __name__ == '__main__':

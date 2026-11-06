@@ -1,0 +1,42 @@
+{
+  "_note": "评测语料清单。故意放在 eval.py 之外：eval.py 是冻结文件（度量定义），加样本不应改度量。",
+  "version": 2,
+  "samples": [
+    {
+      "name": "trailer",
+      "file": "trailer.mp4",
+      "fps": 12,
+      "kind": "番剧预告·快切"
+    },
+    {
+      "name": "mv195",
+      "file": "mv195.mp4",
+      "fps": 12,
+      "kind": "动画MV·大量运动"
+    },
+    {
+      "name": "mv227",
+      "file": "mv227.mp4",
+      "fps": 12,
+      "kind": "动画MV·帧内变化"
+    },
+    {
+      "name": "fanren184",
+      "file": "fanren184.mp4",
+      "fps": 6,
+      "kind": "国漫3D·29min·30fps"
+    },
+    {
+      "name": "fanren027",
+      "file": "fanren027.mp4",
+      "fps": 6,
+      "kind": "国漫3D·11.6min·25fps"
+    },
+    {
+      "name": "spy_clip",
+      "file": "spy_clip.mp4",
+      "fps": 6,
+      "kind": "日漫2D·14.1min·30fps"
+    }
+  ]
+}

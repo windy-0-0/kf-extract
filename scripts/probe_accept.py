@@ -79,6 +79,7 @@ def check_scope(module: str) -> list[str]:
                  'docs/state/SESSIONS.md', 'docs/state/README.md',
                  'docs/status/M1-bench.json', 'scripts/freeze_baseline.py',
                  'scripts/benchlock.py', 'docs/status/M3-bench.json',
+                 'scripts/corpus.py', 'eval/corpus.json',
                  'docs/status/FINAL.md', 'docs/status/M1-report.md',
                  'docs/status/BASELINE-FROZEN.json', '.gitignore', 'README.md'):
             continue
