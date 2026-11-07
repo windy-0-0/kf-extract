@@ -747,36 +747,77 @@ function renderResult(j) {
   ];
   q('#stats').innerHTML = st.map(([k,v])=>`<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
 
-  const w = [];
+  const warns = [];     // [{text, sec}] —— sec 有值时可点击跳到那一帧
   if (r.static_segments?.longest && r.static_segments.longest.dur_sec >= 10) {
     const L = r.static_segments.longest;
-    w.push(`连续静止 ${L.dur_sec}s（${L.start_sec}s→${L.end_sec}s）—— 整段画面基本不变；`+
-           `像素度量对缓慢漂移（字幕/光标）不敏感，建议抽查`);
+    warns.push({
+      text: `连续静止 ${L.dur_sec}s（${L.start_sec}s→${L.end_sec}s）—— 整段画面基本不变；` +
+            `像素度量对缓慢漂移（字幕/光标）不敏感，建议抽查`,
+      // 跳到静止段**起点附近**的第一个选中帧：让用户直接看"这段开头长什么样"
+      sec: L.start_sec,
+      jumpLabel: '看这段附近的关键帧',
+    });
   }
   if (r.dark_frames?.in_selection) {
-    w.push(`选中帧里有 ${r.dark_frames.in_selection} 帧近乎全黑，占图集容量但不含信息`);
+    const idx = r.dark_frames.selection_idx || [];
+    const sec = idx.length && r.keys_time_sec ? r.keys_time_sec[idx[0]] : null;
+    warns.push({
+      text: `选中帧里有 ${r.dark_frames.in_selection} 帧近乎全黑，占图集容量但不含信息`,
+      sec: sec, jumpLabel: sec != null ? '看那帧' : null,
+    });
   }
-  (r.warnings||[]).slice(0,4).forEach(x => w.push(x));
-  q('#warns').innerHTML = w.map(x=>`<div class="warn">${esc(x)}</div>`).join('');
+  (r.warnings||[]).slice(0,4).forEach(x => warns.push({text: x}));
+
+  // keys_time_sec 与 galleries 的顺序一致（images 和 sheets 都是按时间排的），
+  // 所以"跳到某一秒"= 找到时间最接近的那张**单帧**
+  const nearestIdx = (sec) => {
+    if (sec == null || !r.keys_time_sec) return -1;
+    let best = -1, bestD = Infinity;
+    r.keys_time_sec.forEach((t, i) => {
+      const d = Math.abs(t - sec);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    return best;
+  };
+  q('#warns').innerHTML = warns.map((w, i) => {
+    const clickable = w.sec != null && r.keys_time_sec;
+    const btn = clickable
+      ? `<button class="ghost jump" data-wi="${i}" style="margin-left:8px;padding:3px 10px;font-size:12px">${esc(w.jumpLabel||'跳过去')}</button>`
+      : '';
+    return `<div class="warn">${esc(w.text)}${btn}</div>`;
+  }).join('');
+  q('#warns').querySelectorAll('button.jump').forEach(b => {
+    b.onclick = () => {
+      const w = warns[Number(b.dataset.wi)];
+      const fi = nearestIdx(w.sec);
+      if (fi < 0) return;
+      // #frames 里的第 fi 张 = images[fi]（VIEWS 里单帧紧跟在拼图之后）
+      const targetView = VIEWS.findIndex(v => v.kind === 'frame' && v.idx === fi);
+      if (targetView >= 0) { openViewer(targetView); return; }
+      // 单帧画廊只展示前 12 张；超出时如实告诉用户去哪看，而不是静默无反应
+      setHint(`第 ${fi + 1} 张单帧（${w.sec}s 附近）不在预览里，见输出目录 ${r.out}`, false);
+    };
+  });
 
   // 图片 URL：整段路径一起编码（含斜杠），否则服务端切出的相对路径会丢层级
   const fileUrl = (name) =>
     '/files/' + encodeURIComponent(r.out.replace(/\/+$/,'') + '/' + name) +
     '?token=' + TOKEN;
   VIEWS = [];
-  const addViewer = (el, arr, label) => {
+  const addViewer = (el, arr, label, kind) => {
     arr.forEach((nm,i) => {
       const im = document.createElement('img');
       im.src = fileUrl(nm); im.alt = nm;
       im.dataset.vi = VIEWS.length;
-      VIEWS.push({src: fileUrl(nm), name: nm, label});
+      // kind/idx 用于「从警告跳转到某张单帧」时反查 viewer 下标
+      VIEWS.push({src: fileUrl(nm), name: nm, label, kind, idx: i});
       im.onclick = () => openViewer(Number(im.dataset.vi));
       el.appendChild(im);
     });
   };
   q('#sheets').innerHTML = ''; q('#frames').innerHTML = '';
-  addViewer(q('#sheets'), r.sheets, '拼图');
-  addViewer(q('#frames'), r.images, '单帧');
+  addViewer(q('#sheets'), r.sheets, '拼图', 'sheet');
+  addViewer(q('#frames'), r.images, '单帧', 'frame');
   if (r.images.length > 12) {
     q('#frames').innerHTML += `<div class="tag">还有 ${r.images.length-12} 张，见输出目录</div>`;
   }

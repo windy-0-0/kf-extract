@@ -37,6 +37,15 @@ function check(n, name, cond, detail = '') {
   return ok;
 }
 
+async function settleImages(page, timeout = 8000) {
+  // 等当前页面的所有 <img> 都加载完（或超时）。
+  // 切换任务时不等的话，上一批图片的请求会在下一个用例开始时被取消，
+  // 产生一堆 ERR_CONNECTION_RESET（实测：3 条，全是被取消的图片请求）。
+  await page.waitForFunction(
+    () => [...document.querySelectorAll('img')].every(i => i.complete),
+    { timeout }).catch(() => {});
+}
+
 async function startGui(port) {
   const proc = spawn(PY, ['-m', 'kf.cli', '--gui', '--no-browser', '--port', String(port)], {
     cwd: ROOT,
@@ -65,6 +74,15 @@ async function main() {
   // 同时它已在 .gitignore 里（`eval/shots-*/`），跑完即删，不会污染仓库。
   await mkdir(path.join(ROOT, 'eval'), { recursive: true });
   const outDirTmp = await mkdtemp(path.join(ROOT, 'eval', 'shots-e2e-'));
+  // **所有用过的临时输出目录都要记下来**：用例里会再开一个（录屏那条），
+  // 只删第一个会让第二个留在仓库里（实测 [28] 就是这么红的）。
+  const tmpDirs = [outDirTmp];
+  const newTmpDir = async (suffix = '') => {
+    const d = await mkdtemp(path.join(ROOT, 'eval', 'shots-e2e-'));
+    // 加后缀只是为了让两条用例的目录名不撞，实际仍以 mkdtemp 的唯一名为准
+    tmpDirs.push(d);
+    return d;
+  };
 
   console.log(`\n=== KF-Extract GUI 端到端回归 ===`);
   console.log(`  端口 ${port} · 输出 ${outDirTmp}`);
@@ -98,6 +116,12 @@ async function main() {
     // 必须分开记录，否则"无 JS 错误"这条永远是红的（假红、而且会训练人忽略它）。
     if (/Failed to load resource.*status of (400|404|403)/.test(t)) {
       expectedHttpErrors.push(t); return;
+    }
+    // **切换素材/任务时，上一批图片的请求会被中断**（net::ERR_CONNECTION_RESET /
+    // ERR_ABORTED）。这不是 JS 错误，是浏览器在取消已不需要的请求 ——
+    // 用例之间会切素材，所以必然出现。同样要单独计数，而不是让"无 JS 错误"永远红。
+    if (/Failed to load resource.*(ERR_CONNECTION_RESET|ERR_ABORTED|ERR_NETWORK_CHANGED)/.test(t)) {
+      expectedHttpErrors.push('[net-reset] ' + t); return;
     }
     jsErrors.push('console: ' + t);
   });
@@ -272,14 +296,67 @@ async function main() {
     check(19, 'Esc 能关闭 viewer',
       await page.evaluate(() => !document.querySelector('#viewer').classList.contains('on')));
 
+    // ---------------------------------------------------------------- 6b 静止段可点击跳转
+    // 用 codecast（267s 录屏，有 200s+ 静止段）触发「静止段」警告并点它，
+    // 断言 viewer 打开到某张**单帧**（且位置文字是「单帧 N / M」）。
+    // 这是本产品最重要的诚实性特征：让用户能自己核对"这段是不是真的静止"。
+    await page.evaluate(() => { document.querySelector('#out').value = ''; });
+    const CAST = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('#video option')];
+      const c = opts.find(o => o.textContent.includes('codecast.mp4'));
+      return c ? c.value : null;
+    });
+    if (CAST) {
+      await page.select('#video', CAST);
+      await page.evaluate((out) => {
+        document.querySelector('#k').value = '20';
+        document.querySelector('#fps').value = '6';
+        document.querySelector('#out').value = out;
+      }, await newTmpDir());
+      await page.click('#go');
+      await page.waitForFunction(
+        () => document.querySelector('#hint').textContent.startsWith('完成'),
+        { timeout: 300000 });
+      await new Promise(r => setTimeout(r, 1500));
+
+      await settleImages(page);
+      const hasWarn = await page.evaluate(() =>
+        [...document.querySelectorAll('#warns .warn')].some(d => d.textContent.includes('连续静止')));
+      check(22, '录屏素材报出了「连续静止」警告', hasWarn);
+
+      const jumps = await page.evaluate(() => document.querySelectorAll('#warns button.jump').length);
+      check(23, '静止段警告带可点击的跳转按钮', jumps > 0, `buttons=${jumps}`);
+
+      if (jumps > 0) {
+        await page.evaluate(() => document.querySelector('#warns button.jump').click());
+        await new Promise(r => setTimeout(r, 800));
+        const jp = await page.evaluate(() => ({
+          on: document.querySelector('#viewer').classList.contains('on'),
+          pos: document.querySelector('#vpos').textContent,
+        }));
+        check(24, '点警告能跳到附近的关键帧（打开 viewer）', jp.on, JSON.stringify(jp));
+        check(25, '跳转落在单帧（不是拼图）', /单帧/.test(jp.pos), jp.pos);
+        await page.keyboard.press('Escape');
+        await new Promise(r => setTimeout(r, 300));
+      }
+        await settleImages(page);
+    // 切回 trailer 继续后面的用例
+      const TR = await page.evaluate(() => {
+        const opts = [...document.querySelectorAll('#video option')];
+        return opts.find(o => o.textContent.includes('trailer.mp4'))?.value || opts[0].value;
+      });
+      await page.select('#video', TR);
+      await page.evaluate((out) => { document.querySelector('#out').value = out; }, outDirTmp);
+    }
+
     // ---------------------------------------------------------------- 7 长静默文案存在
     const hasStale = await page.evaluate(() =>
       document.body.innerHTML.includes('仍在工作') ||
       document.documentElement.innerHTML.includes('仍在工作'));
-    check(20, '长静默提示的文案在页面里', hasStale);
+    check(26, '长静默提示的文案在页面里', hasStale);
 
     // ---------------------------------------------------------------- 8 无 JS 错误
-    check(21, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
+    check(27, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
     // 预期内的 4xx 是**故意**打的（非法目录用例）；打印出来让它可以被复核，
     // 而不是默默吞掉 —— 吞掉的话"无 JS 错误"这条就变成永不红。
     console.log(`  (预期内的 HTTP 4xx: ${expectedHttpErrors.length} 条，来自非法目录用例)`);
@@ -288,7 +365,10 @@ async function main() {
   } finally {
     await browser?.close().catch(() => {});
     gui.proc.kill('SIGTERM');
-    await rm(outDirTmp, { recursive: true, force: true }).catch(() => {});
+    // 统一清理所有临时目录（不是一个）
+    for (const d of tmpDirs) {
+      await rm(d, { recursive: true, force: true }).catch(() => {});
+    }
   }
 
   // ---------------------------------------------------------------- 10 仓库没被污染
@@ -296,9 +376,9 @@ async function main() {
   // （实测踩到：`finally 没删干净` 是假红，其实是我检查得太早）。
   const leaked = await readdir(path.join(ROOT, 'eval')).catch(() => []);
   const leftovers = leaked.filter(x => x.startsWith('shots-e2e-'));
-  check(22, 'e2e 临时产物目录已清理', leftovers.length === 0,
+  check(28, 'e2e 临时产物目录已清理', leftovers.length === 0,
     leftovers.length ? `${JSON.stringify(leftovers)}（finally 没删干净）` : '');
-  check(23, '没有把产物写进 eval/shots（上次误提交的那条路径）',
+  check(29, '没有把产物写进 eval/shots（上次误提交的那条路径）',
     !leaked.includes('shots'), 'GUI 默认输出目录被写进了仓库');
 
   console.log(`\n${failures === 0 ? '✅ 全部通过' : `❌ ${failures} 条失败`}  ` +
