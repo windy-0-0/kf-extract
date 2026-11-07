@@ -191,12 +191,15 @@ kf-extract 番剧.mp4 --k 80 --resume
 
 ## 实测数据（六段素材，全部可复跑）
 
-> **素材去哪拿**：六段视频共 985MB，超过 GitHub 单文件 100MB 硬限，
-> 所以打包放在 [Releases](../../releases) 的附件 `eval-assets.zip`。
-> 下载解压到 `eval/` 即可复跑全部数字；**只看代码/用工具不需要下载素材**。
+> **素材去哪拿**：共 9 段视频，分两个 Release 附件（都超过 GitHub 单文件 100MB 硬限）：
+> - `eval-assets.zip`（985MB，6 段动画）→ [v0.1.0](../../releases/tag/v0.1.0)
+> - `eval-assets-2.zip`（85MB，3 段真实素材）→ [v0.2.2](../../releases/tag/v0.2.2)
+>
+> **只看代码/用工具不需要下载素材。**
 >
 > ```bash
-> unzip -o eval-assets.zip -d eval/
+> unzip -o eval-assets.zip -d eval/      # 动画 6 段
+> unzip -o eval-assets-2.zip -d .        # 真人实拍 + 录屏 3 段
 > ```
 
 | 素材 | 时长 | 帧率 | 类型 |

@@ -40,3 +40,24 @@ venv/bin/python scripts/kf_extract.py eval/fanren184.mp4 --k 80 --out shots/
 
 1. 版权：这些是公开平台的动画片段，只在本机用于评测，不随项目分发
 2. 体积：近 1GB，clone 会很慢
+
+
+## 新增的三段真实素材（v0.2.2）
+
+为覆盖「非动画」场景（用户要求加真人实拍与录屏），新增三个样本，合计 89MB：
+
+| 文件 | 时长 | 帧率 | 类型 |
+|---|---|---|---|
+| `liveact.mp4` | 202s | 30fps | 真人实拍·街拍（单镜头连续运动）|
+| `vlog.mp4` | 499s | 24fps | 真人实拍·Vlog（有字幕，底部缓慢漂移）|
+| `codecast.mp4` | 267s | 30fps | 屏幕录制·编程教程（静态 UI）|
+
+它们单独打包在 [Releases](https://github.com/windy-0-0/kf-extract/releases/tag/v0.2.2)
+的附件 `eval-assets-2.zip`（85MB）：
+
+```bash
+unzip -o eval-assets-2.zip -d .
+```
+
+> 前 6 段动画素材仍在 `v0.1.0` 的 `eval-assets.zip`（985MB）。
+> 两包解到同一个 `eval/` 即可复跑全部 9 个样本的实测数字。
