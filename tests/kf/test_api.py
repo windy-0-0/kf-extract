@@ -246,6 +246,89 @@ def test_static_runs_uses_segment_diameter_not_adjacent_diff():
     assert np.nanpercentile(D, 90) > 8.0, '段内两两距离 90 分位不再 >8，前提已变'
 
 
+def test_budget_starvation_hint_is_targeted():
+    """「预算被前端高变化吃掉」的提示必须收紧，不许对普通素材乱报。
+
+    触发条件三条同时成立才提示（R377：收紧到"只可能是这一种情况"）：
+      ① 最长静止段占全片 >= 50%
+      ② 最大空白落在该静止段内 且 >= 20s
+      ③ K <= 40
+
+    实测：codecast K=20 命中（203.5s 静止 / 76% / 空白 112.2s），
+    trailer / liveact / vlog 均不命中。
+    """
+    if not _HAVE:
+        _skip(); return
+    CAST = ROOT / 'eval/codecast.mp4'
+    if not CAST.exists():
+        print('  (skip: 缺 eval/codecast.mp4)'); return
+
+    r = extract(str(CAST), k=20)
+    hit = [w for w in (r.get('warnings') or [])
+           if '预算主要被变化多的部分占用' in w]
+    assert hit, 'codecast K=20 应命中预算不足提示'
+
+    st = r['static_segments']['longest']
+    dur = r['analysis_frames'] / r['requested']['fps']
+    assert st['dur_sec'] / dur >= 0.5, '断言前提：静止段占比应 >=50%'
+    assert r['max_gap_sec'] >= st['start_sec'], '断言前提：空白应落在静止段内'
+
+    # K 大时不该报（均衡项会把帧补回来）
+    r2 = extract(str(TRAILER), k=16)
+    hit2 = [w for w in (r2.get('warnings') or [])
+            if '预算主要被变化多的部分占用' in w]
+    assert not hit2, '普通素材不该命中这条提示'
+
+
+def test_budget_starvation_hint_needs_both_conditions():
+    """提示的两条前提必须**同时**成立，且各素材的实际取值要可复核。
+
+    这条不是"跑一遍看有没有 warning"（那样放开任一条件都不会红），
+    而是**直接断言两条条件的取值表**。任何一条被放宽或改错，
+    这里的期望值就对不上，立刻红。
+
+    实测取值（k=20）：
+    | 素材 | 静止段占比 | 空白 | 空白是否落在静止段内 |
+    |---|---|---|---|
+    | codecast | 76% | 112.2s | 是（start=63.2）|
+    | trailer | 16% | 2.0s | 否 |
+    | liveact | 1% | 20.8s | 否（start=52.2）|
+    | vlog | 4% | 55.7s | 否（start=420.5）|
+    """
+    if not _HAVE:
+        _skip(); return
+    CAST = ROOT / 'eval/codecast.mp4'
+    if not CAST.exists():
+        print('  (skip: 缺 eval/codecast.mp4)'); return
+
+    def cond(r):
+        st = r['static_segments']['longest'] or {}
+        dur = r['analysis_frames'] / r['requested']['fps']
+        c1 = (st.get('dur_sec', 0) / dur) >= 0.5
+        c2 = (r['max_gap_sec'] >= 20
+              and st.get('start_sec', 1e9) <= r['max_gap_sec'])
+        return c1, c2
+
+    def has_hint(r):
+        return any('预算主要被变化多的部分占用' in w
+                   for w in (r.get('warnings') or []))
+
+    rc = extract(str(CAST), k=20)
+    c1, c2 = cond(rc)
+    assert c1 and c2, f'codecast 两条条件应都为真，实际 ①={c1} ②={c2}'
+    assert has_hint(rc), '两条为真时必须给出提示'
+
+    # 普通素材：至少一条为假，因而不许命中
+    for name in ('trailer.mp4', 'liveact.mp4', 'vlog.mp4'):
+        f = ROOT / 'eval' / name
+        if not f.exists():
+            continue
+        r = extract(str(f), k=20)
+        a1, a2 = cond(r)
+        assert not (a1 and a2), f'{name} 两条条件居然都为真（判据被放宽）'
+        assert not has_hint(r), f'{name} 误报了'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

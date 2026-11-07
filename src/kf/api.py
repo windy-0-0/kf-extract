@@ -331,6 +331,26 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
             '时间戳与导帧位置可能有 ±1 帧的偏差。装 ffmpeg 全套可消除此警告。')
     if dur <= 0:
         result['warnings'].append('拿不到时长：时间戳列可能错位（导帧仍会尝试）')
+    # 「时间预算被前端高变化吃掉」的定向提示。
+    # 触发条件收紧到「只可能是这一种情况」（R377）：
+    #   ① 最长静止段占全片 >= 50%
+    #   ② 最大空白 >= 20s，且**确实落在这个静止段里**
+    #      （`start_sec <= max_gap` 这个判据代替了"K <= 40"——
+    #       实测：K=60 时空白 48s 但落在静止段之外，条件②自己就不成立。
+    #       所以 K 上限是多余条件，删掉，不留"永远不会红"的闸门）
+    # 两条同时成立，才可能真的是"变化全集中在前段"。其余一律不猜。
+    _dur = n / max(fps, 1e-9)
+    if (_longest_static and _dur > 0
+            and _longest_static['dur_sec'] / _dur >= 0.5
+            and max_gap_sec >= 20
+            and _longest_static['start_sec'] <= max_gap_sec):
+        result['warnings'].append(
+            f"这段视频有 {_longest_static['dur_sec']}s（占 "
+            f"{round(100 * _longest_static['dur_sec'] / _dur)}%）画面基本不变，"
+            f"而最大空白 {max_gap_sec}s 也落在这里。"
+            f"当前 K={chosen_k} 的预算主要被变化多的部分占用了。"
+            f"若你想让静止段也有更多代表帧，用 --balance 0.5 或加大 --k。")
+
     if _longest_static and _longest_static['dur_sec'] >= 20:
         result['warnings'].append(
             f"发现一段连续 {_longest_static['dur_sec']}s 几乎静止的画面"

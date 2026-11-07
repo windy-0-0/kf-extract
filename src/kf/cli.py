@@ -51,8 +51,9 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
                     help='分析时的降采样帧率（默认 6）。越高越准越慢，内存线性涨。')
     ap.add_argument('--balance', type=float, default=0.2, metavar='A',
                     help='时间均衡权重 0~1（默认 0.2）：0=纯内容优先会留长空白；'
-                         '0.2=九样本实测最优（覆盖代价 +1.4%%、空白降 32%%）；'
-                         '0.3=更强均衡但覆盖代价升到 +3.0%%（最坏段 +11%%）。')
+                         '0.2=默认（覆盖代价 +1.4%%、空白中位 -32%%）；'
+                         '0.3=覆盖代价 +3.0%% 但空白在"高变化集中"素材上更稳'
+                         '（fanren 实测 47s vs 0.2 的 78s）。')
     ap.add_argument('--canvas', default=None,
                     choices=[*CANVAS_PROFILES, 'auto'],
                     help='出图档位（默认 %s）。cheap=800×450/233tok；'
