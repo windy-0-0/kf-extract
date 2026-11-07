@@ -16,10 +16,13 @@ _HAVE = TRAILER.exists()
 
 
 def _run(argv, timeout=120):
-    env = {'PYTHONPATH': SRC, 'PATH': '/usr/bin:/bin:/usr/sbin:/sbin'}
     import os
 
-    env = {**os.environ, 'PYTHONPATH': SRC}
+    # **必须让工作区的 src 排在最前**：否则 `-m kf.cli` 可能命中
+    # 已 pip 安装的那份（版本/代码都是旧的），测试就变成假绿。
+    # 实测：把 __version__ 改回 0.2.0 后这条版本测试居然仍然通过 ——
+    # 因为跑的是 site-packages 里的旧包。
+    env = {**os.environ, 'PYTHONPATH': SRC, 'PYTHONNOUSERSITE': '1'}
     r = subprocess.run([PY, '-m', 'kf.cli', *argv], capture_output=True,
                        text=True, timeout=timeout, cwd=ROOT, env=env)
     return r.returncode, r.stdout + r.stderr
@@ -61,10 +64,38 @@ def test_bad_balance_exits_1():
     assert rc == 1, f'balance=1.5 应退出 1，实际 {rc}'
 
 
-def test_version_works():
+def test_version_is_single_source_of_truth():
+    """版本号只能有一个来源，且 CLI 必须报它。
+
+    **为什么不能"CLI 报的 == __init__.py 里写的"**：那不是测试，是同义反复 --
+    CLI 本来就是从 `__init__.py` 读的，两边永远相等（实测：把版本改成 9.9.9
+    这条断言照样通过）。真正会漂移的是**三个独立的位置**：
+      ① `src/kf/__init__.py` 的 __version__
+      ② pyproject.toml 必须声明 dynamic + attr（否则打包用的是另一个来源）
+      ③ 打出来的 Wheel 元数据（只有 install 后才看得见）
+    所以这里有意义的是 ②：一旦有人把版本手写进 pyproject，
+    pip 装的版本就会和 CLI 报的不一致（实测踩到：Release 发了 v0.2.2，
+    安装后 `--version` 仍是 0.2.0）。
+    """
+    import re
+
     rc, out = _run(['--version'])
-    assert rc == 0
-    assert 'kf-extract' in out and '0.2' in out
+    assert rc == 0, out
+    m = re.search(r'(\d+\.\d+\.\d+)', out)
+    assert m, f'--version 输出里没有版本号: {out!r}'
+    v_cli = m.group(1)
+
+    init_py = (ROOT / 'src' / 'kf' / '__init__.py').read_text()
+    v_mod = re.search(r"__version__ = '([^']+)'", init_py).group(1)
+    assert v_cli == v_mod
+
+    pyproj = (ROOT / 'pyproject.toml').read_text()
+    assert 'dynamic = ["version"]' in pyproj, 'pyproject 没声明 dynamic version'
+    assert 'attr = "kf.__version__"' in pyproj, 'pyproject 没从包属性读版本'
+    # 不许在 pyproject 里手写 version（两份来源必然漂移）
+    head = pyproj.split('[tool.setuptools.dynamic]')[0]
+    assert re.search(r'^version *=', head, re.M) is None, \
+        'pyproject 里手写了 version，会造成两份来源漂移'
 
 
 def test_help_mentions_all_knobs():
