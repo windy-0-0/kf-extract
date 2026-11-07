@@ -92,7 +92,19 @@ def test_smoke_end_to_end(tmp_path=None):
         n_sheet = len(list(d.glob('sheet-*.jpg')))
         assert n_png == 8, f'导出了 {n_png} 帧（应 8）'
         assert n_sheet == 2, f'拼了 {n_sheet} 张（8 帧 4 格应 2 张）'
-        assert not (d / '.kf-state.json').exists(), '成功结束不该留状态文件'
+        # 成功结束后**应当留下可复用的状态**（D-038）：
+        # 早期实现整删，导致"跑完一次再换个 K 再跑"永远复用不了解码缓存。
+        # 现在留一份 status=finished 的索引，只保制品仍在的 done 阶段。
+        import json
+
+        st = d / '.kf-state.json'
+        assert st.exists(), '成功结束后没留复用索引（下次 --resume 会白跑一次解码）'
+        rec = json.loads(st.read_text())
+        assert rec.get('status') == 'finished', f'状态应为 finished，实际 {rec.get("status")}'
+        for name, r in rec.get('stages', {}).items():
+            assert r.get('state') == 'done', f'留下的阶段 {name} 不是 done'
+            for a in r.get('artifacts', []):
+                assert pathlib.Path(a).exists(), f'索引指向不存在的产物: {a}'
 
 
 def test_input_video_not_modified():

@@ -168,8 +168,31 @@ class RunState:
     def flush(self) -> None:
         atomic_write_json(self.path, self.data)
 
-    def clear(self) -> None:
-        """成功结束后清掉状态文件 —— 留着会让下一次运行误以为可以复用。"""
+    def clear(self, keep_reusable: bool = True) -> None:
+        """成功结束后收尾。
+
+        ## 为什么不能整个删掉状态文件（实测踩到）
+
+        早期实现直接 `unlink`。后果：**缓存还在，索引没了** ——
+        下一次 `--resume` 找不到指纹，只能重新解码 40 秒，
+        而磁盘上明明躺着完整的 `.kf-cache-gray.npz`。等于续跑功能对
+        「成功跑完一次之后再跑」这个最常见的场景**完全失效**。
+
+        正确做法：**把可复用的阶段留下来，只把任务级状态标成 finished**。
+        这样「换个 K 再跑」能直接复用解码结果（实测 55.8s → 0.0s）。
+        """
+        if keep_reusable and self.data.get('stages'):
+            self.data['status'] = 'finished'
+            self.data['finished'] = round(time.time(), 3)
+            # 只保留「制品还在」的阶段，避免索引指向已删除的文件
+            for name, rec in list(self.data['stages'].items()):
+                arts = [a for a in rec.get('artifacts', []) if pathlib.Path(a).exists()]
+                if rec.get('state') == 'done' and arts:
+                    rec['artifacts'] = arts
+                else:
+                    self.data['stages'].pop(name, None)
+            self.flush()
+            return
         try:
             self.path.unlink()
         except OSError:

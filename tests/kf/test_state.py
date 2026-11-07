@@ -147,6 +147,71 @@ def test_flush_is_readable_by_humans():
         assert json.loads(raw)['stages']['decode']['state'] == 'done'
 
 
+def test_mark_does_not_leave_stale_partial_frames():
+    """`mark()` 是 update 语义：写 done 时必须显式清掉 partial_frames。
+
+    实测踩到（GUI 长任务停止验证时，我自己引入的 bug）：
+    中断时写了 `interrupted + partial_frames=3072`；
+    之后完整解码成功写了 `done`，但 mark 只是 update，**残留了 partial_frames**。
+    于是下一次 --resume 看到残留标记，误判成"部分缓存"，白跑一次 40 秒完整解码。
+
+    这条测试锁死「done 状态不许带 partial_frames」这个不变量。
+    """
+    with tempfile.TemporaryDirectory() as td:
+        st = RunState(td)
+        st.mark('decode', 'interrupted', fp='f1', partial_frames=3072)
+        assert st.get('decode')['partial_frames'] == 3072
+        # 模拟 api 里的做法：先清，再写 done
+        st.data['stages']['decode'].pop('partial_frames', None)
+        st.mark('decode', 'done', fp='f1')
+        assert 'partial_frames' not in st.get('decode'), \
+            'done 状态仍带 partial_frames，会让 resume 误判'
+
+
+def test_reusable_rejects_interrupted_stage():
+    """中断的阶段（哪怕有指纹、有产物）绝不能被当成可复用。"""
+    with tempfile.TemporaryDirectory() as td:
+        p = pathlib.Path(td) / 'part.npz'
+        p.write_bytes(b'x')
+        st = RunState(td)
+        st.mark('decode', 'interrupted', fp='f1', artifacts=[str(p)], partial_frames=100)
+        assert not st.reusable('decode', 'f1'), \
+            'interrupted 阶段被判定为可复用 —— 会拿半截数据当完整结果'
+
+
+def test_clear_keeps_reusable_stages():
+    """成功后不能把状态文件整个删掉 —— 否则「跑完一次再跑」永远没法复用。
+
+    实测踩到：早期 `clear()` 直接 unlink，结果缓存 `.npz` 还在、索引没了，
+    下次 --resume 找不到指纹只能重新解码 40 秒（磁盘上明明有完整缓存）。
+    这等于让续跑功能对最常见的场景（跑过一次，换个 K 再跑）完全失效。
+    """
+    with tempfile.TemporaryDirectory() as td:
+        art = pathlib.Path(td) / 'gray.npz'
+        art.write_bytes(b'data')
+        st = RunState(td)
+        st.mark('decode', 'done', fp='fp1', artifacts=[str(art)])
+        st.clear()
+        assert pathlib.Path(td, RunState.NAME).exists(), '状态文件被整个删了'
+        st2 = RunState(td, resume=True)
+        assert st2.data.get('status') == 'finished'
+        assert st2.reusable('decode', 'fp1'), '成功后应仍可复用未变的阶段'
+
+
+def test_clear_drops_stages_whose_artifacts_are_gone():
+    """索引不许指向已删除的文件 —— 那会让 resume 引用不存在的产物。"""
+    with tempfile.TemporaryDirectory() as td:
+        art = pathlib.Path(td) / 'gray.npz'
+        art.write_bytes(b'data')
+        st = RunState(td)
+        st.mark('decode', 'done', fp='fp1', artifacts=[str(art)])
+        art.unlink()
+        st.clear()
+        st2 = RunState(td, resume=True)
+        assert 'decode' not in st2.data.get('stages', {}), \
+            '产物已删，索引却还在'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

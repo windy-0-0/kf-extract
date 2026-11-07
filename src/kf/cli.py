@@ -36,9 +36,10 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
                '     kf-extract 番剧.mp4 --budget 25 --canvas cheap\n'
                '     kf-extract 番剧.mp4 --k 80 --resume',
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('video', help='视频文件（mp4/mkv/webm/avi… 任何 ffmpeg 能解的）')
+    ap.add_argument('video', nargs='?', default=None,
+                    help='视频文件（mp4/mkv/webm/avi… 任何 ffmpeg 能解的）')
 
-    g = ap.add_mutually_exclusive_group(required=True)
+    g = ap.add_mutually_exclusive_group(required=False)
     g.add_argument('--k', type=int, metavar='N',
                    help='抽多少帧。成本主要看它：K 翻倍 maxdist 只降约 10%%，'
                         '通常 80 就够。')
@@ -78,6 +79,14 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
     ap.add_argument('--zip', action='store_true',
                     help='完成后把产物（不含报告）打成一个 zip。')
     ap.add_argument('--quiet', '-q', action='store_true', help='只输出最终结果行。')
+    ap.add_argument('--gui', action='store_true',
+                    help='启动本地 Web 界面（浏览器打开，只绑 127.0.0.1）')
+    ap.add_argument('--port', type=int, default=0,
+                    help='GUI 端口（默认 0 = 让系统分配）')
+    ap.add_argument('--no-browser', action='store_true',
+                    help='GUI 启动时不自动打开浏览器')
+    ap.add_argument('--dirs', default=None,
+                    help='GUI 列素材的目录（逗号分隔；默认只列项目目录）')
     ap.add_argument('--version', action='version', version=f'kf-extract {__version__}')
     return ap
 
@@ -114,12 +123,39 @@ def main(argv=None) -> int:
         print('用法: kf-extract VIDEO --k N   （或 --budget D）', file=sys.stderr)
         return 1
 
+    # GUI 模式：不要求 video / k
+    if a.gui:
+        from .gui import serve
+
+        dirs = None
+        if a.dirs:
+            dirs = [pathlib.Path(x.strip()).expanduser()
+                    for x in a.dirs.split(',') if x.strip()]
+        srv, url = serve(port=a.port, root_dir=__import__('os').getcwd(),
+                         open_browser=not a.no_browser, allow_dirs=dirs)
+        print(f'GUI 已启动：{url}', flush=True)
+        print('Ctrl-C 退出。素材只在本机处理，不上传。', flush=True)
+        try:
+            while True:
+                __import__('time').sleep(1)
+        except KeyboardInterrupt:
+            print('\n已退出。', flush=True)
+            srv.shutdown()
+        return 0
+
+    if not a.video:
+        print('FAIL: 需要给出视频路径（或用 --gui 打开界面）', file=sys.stderr)
+        return 1
+
     # 参数层的错误先挡住，别让它跑 100 秒解码之后才报
     if a.k is not None and a.k <= 0:
         print('FAIL: --k 必须是正整数', file=sys.stderr)
         return 1
     if a.budget is not None and a.budget <= 0:
         print('FAIL: --budget 必须为正', file=sys.stderr)
+        return 1
+    if a.k is None and a.budget is None:
+        print('FAIL: 必须给 --k 或 --budget（不猜）', file=sys.stderr)
         return 1
     if not (0 <= a.balance <= 1):
         print('FAIL: --balance 必须在 0~1 之间', file=sys.stderr)
