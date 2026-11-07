@@ -48,9 +48,10 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
 
     ap.add_argument('--fps', type=float, default=6.0, metavar='F',
                     help='分析时的降采样帧率（默认 6）。越高越准越慢，内存线性涨。')
-    ap.add_argument('--balance', type=float, default=0.3, metavar='A',
-                    help='时间均衡权重 0~1（默认 0.3）：0=纯内容优先会留长空白；'
-                         '0.3=实测最优（空白降 45%%、覆盖只降 3%%）。')
+    ap.add_argument('--balance', type=float, default=0.2, metavar='A',
+                    help='时间均衡权重 0~1（默认 0.2）：0=纯内容优先会留长空白；'
+                         '0.2=九样本实测最优（覆盖代价 +1.4%%、空白降 32%%）；'
+                         '0.3=更强均衡但覆盖代价升到 +3.0%%（最坏段 +11%%）。')
     ap.add_argument('--canvas', default=None,
                     choices=[*CANVAS_PROFILES, 'auto'],
                     help='出图档位（默认 %s）。cheap=800×450/233tok；'

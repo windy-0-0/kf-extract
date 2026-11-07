@@ -57,7 +57,7 @@ class ExtractResult(dict):
                                 self.get('images') or [])
 
 
-def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
+def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
             canvas=None, out=None, images=True, sheets=True,
             image_ext='png', sheet_ext='jpg', quality=88,
             resume=False, progress=None) -> ExtractResult:
@@ -67,7 +67,7 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
     :param k: 抽多少帧；与 `budget` 二选一
     :param budget: 最大盲区预算（L1，0–255 刻度）。给了就自动决定 K
     :param fps: 分析时的降采样帧率（默认 6）。越高越准越慢，内存线性涨
-    :param balance: 时间均衡权重 0–1（默认 0.3）。0 = 纯内容优先（会留长空白）
+    :param balance: 时间均衡权重 0–1（默认 0.2）。0 = 纯内容优先（会留长空白）
     :param canvas: `cheap` / `readable` / `max`；默认按 `readable`
     :param out: 输出目录；`None` 则只算不落盘（纯库用法）
     :param images: 是否导出原分辨率 PNG
