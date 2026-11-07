@@ -210,19 +210,76 @@ async function main() {
     const v2 = await page.evaluate(() => document.querySelector('#vpos').textContent);
     check(14, '→ 能切到下一张', v2 !== v1.pos, `${v1.pos} → ${v2}`);
 
+    // ---- 缩放：读清小字是这个产品的卖点，viewer 必须能放大
+    await page.click('#vzi');
+    await page.click('#vzi');
+    await new Promise(r => setTimeout(r, 300));
+    const zm = await page.evaluate(() => ({
+      lvl: document.querySelector('#vlvl').textContent,
+      zoomed: document.querySelector('#viewer').classList.contains('zoomed'),
+    }));
+    check(15, 'viewer 能放大', zm.zoomed && parseFloat(zm.lvl) > 1.5, JSON.stringify(zm));
+
+    await page.click('#vzfit');
+    await new Promise(r => setTimeout(r, 300));
+    const fit = await page.evaluate(() => ({
+      lvl: document.querySelector('#vlvl').textContent,
+      zoomed: document.querySelector('#viewer').classList.contains('zoomed'),
+    }));
+    check(16, '「适应」能回到 1.0× 且退出放大态',
+      !fit.zoomed && parseFloat(fit.lvl) <= 1.05, JSON.stringify(fit));
+
+    // 1:1 必须是「**按原始像素**」而不是「缩放 1.0」。
+    //
+    // 实测教训：第一版断言 `比例 >= 1`，宽屏上 1066 宽的图算出正好 ≈1.0，
+    // 把实现退回成 `setZoom(1)` 照样通过（假绿）。
+    // 这里换个**不依赖具体数值**的判据：先量"适应态下的渲染宽度"，
+    // 再看 1:1 后是否**按比例放大到等于图片自然宽度**。
+    await page.setViewport({ width: 900, height: 700 });   // 故意收窄，让图必须放大
+    await page.click('#vzfit');
+    await new Promise(r => setTimeout(r, 400));
+    const fitW = await page.evaluate(() => {
+      const im = document.querySelector('#vimg');
+      return { natural: im.naturalWidth, rendered: Math.round(im.getBoundingClientRect().width) };
+    });
+    await page.click('#vz1');
+    await new Promise(r => setTimeout(r, 400));
+    const oneW = await page.evaluate(() => {
+      const im = document.querySelector('#vimg');
+      return { rendered: Math.round(im.getBoundingClientRect().width),
+               lvl: parseFloat(document.querySelector('#vlvl').textContent) };
+    });
+    // 断言：1:1 之后的渲染宽度 ≈ 自然宽度（允许 8% 误差，缩放是连续的）
+    const ratio = oneW.rendered / Math.max(1, fitW.natural);
+    check(17, '1:1 让渲染宽度追上图片原始像素宽',
+      fitW.natural > 0 && oneW.lvl >= 1.0 && Math.abs(ratio - 1) < 0.08,
+      `natural=${fitW.natural} fit渲染=${fitW.rendered} 1:1渲染=${oneW.rendered} ` +
+      `lvl=${oneW.lvl}× 比例=${ratio.toFixed(3)}`);
+    await page.setViewport({ width: 1280, height: 900 });
+
+    // 切图后必须回到适应态（否则在放大态下切图会看不到新图）
+    await page.keyboard.press('ArrowRight');
+    await new Promise(r => setTimeout(r, 400));
+    const afterSwitch = await page.evaluate(() => ({
+      lvl: document.querySelector('#vlvl').textContent,
+      pos: document.querySelector('#vpos').textContent,
+    }));
+    check(18, '切图后自动回到适应态', parseFloat(afterSwitch.lvl) <= 1.05,
+      JSON.stringify(afterSwitch));
+
     await page.keyboard.press('Escape');
     await new Promise(r => setTimeout(r, 400));
-    check(15, 'Esc 能关闭 viewer',
+    check(19, 'Esc 能关闭 viewer',
       await page.evaluate(() => !document.querySelector('#viewer').classList.contains('on')));
 
     // ---------------------------------------------------------------- 7 长静默文案存在
     const hasStale = await page.evaluate(() =>
       document.body.innerHTML.includes('仍在工作') ||
       document.documentElement.innerHTML.includes('仍在工作'));
-    check(16, '长静默提示的文案在页面里', hasStale);
+    check(20, '长静默提示的文案在页面里', hasStale);
 
     // ---------------------------------------------------------------- 8 无 JS 错误
-    check(17, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
+    check(21, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
     // 预期内的 4xx 是**故意**打的（非法目录用例）；打印出来让它可以被复核，
     // 而不是默默吞掉 —— 吞掉的话"无 JS 错误"这条就变成永不红。
     console.log(`  (预期内的 HTTP 4xx: ${expectedHttpErrors.length} 条，来自非法目录用例)`);
@@ -239,9 +296,9 @@ async function main() {
   // （实测踩到：`finally 没删干净` 是假红，其实是我检查得太早）。
   const leaked = await readdir(path.join(ROOT, 'eval')).catch(() => []);
   const leftovers = leaked.filter(x => x.startsWith('shots-e2e-'));
-  check(18, 'e2e 临时产物目录已清理', leftovers.length === 0,
+  check(22, 'e2e 临时产物目录已清理', leftovers.length === 0,
     leftovers.length ? `${JSON.stringify(leftovers)}（finally 没删干净）` : '');
-  check(19, '没有把产物写进 eval/shots（上次误提交的那条路径）',
+  check(23, '没有把产物写进 eval/shots（上次误提交的那条路径）',
     !leaked.includes('shots'), 'GUI 默认输出目录被写进了仓库');
 
   console.log(`\n${failures === 0 ? '✅ 全部通过' : `❌ ${failures} 条失败`}  ` +

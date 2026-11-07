@@ -514,7 +514,14 @@ display:none;flex-direction:column}
 color:var(--mut);font-size:12px;border-bottom:1px solid var(--line)}
 #viewer .body{flex:1;display:flex;align-items:center;justify-content:center;
 overflow:auto;padding:12px}
-#viewer img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+#viewer .body{position:relative}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;
+transition:width .12s ease-out;cursor:zoom-in}
+#viewer.zoomed img{cursor:zoom-out}
+#viewer.zoomed .body{overflow:auto;cursor:grab}
+#viewer.zoomed .body.dragging{cursor:grabbing}
+.zoombar{display:flex;gap:6px;align-items:center;margin-left:auto}
+.zoombar .lvl{font-variant-numeric:tabular-nums;min-width:46px;text-align:center}
 #viewer button{background:#0f1216;border:1px solid var(--line);color:var(--fg);
 padding:5px 12px;font-size:13px}
 </style></head><body>
@@ -595,6 +602,13 @@ padding:5px 12px;font-size:13px}
     <span id="vpos">—</span>
     <button id="vnext">→</button>
     <span id="vname" style="flex:1;overflow:hidden;text-overflow:ellipsis"></span>
+    <div class="zoombar">
+      <button id="vzo">−</button>
+      <span class="lvl" id="vlvl">1.0×</span>
+      <button id="vzi">+</button>
+      <button id="vzfit">适应</button>
+      <button id="vz1">1:1</button>
+    </div>
     <button id="vclose">关闭 (Esc)</button>
   </div>
   <div class="body"><img id="vimg" alt=""></div>
@@ -820,6 +834,42 @@ async function selectJob(id) {
 }
 
 // ---- viewer
+// ---- viewer 缩放
+let VZOOM = 1;
+function applyZoom() {
+  const v = q('#viewer');
+  const im = q('#vimg');
+  if (VZOOM <= 1.001) {
+    v.classList.remove('zoomed');
+    im.style.width = ''; im.style.height = '';
+    im.style.maxWidth = '100%'; im.style.maxHeight = '100%';
+  } else {
+    v.classList.add('zoomed');
+    // **用 width 缩放而不是 transform**：transform 会让
+    // getBoundingClientRect().width 包含 scale，导致"按原始像素"算不准
+    // （实测：1066 的图被算成 1.2× 却渲染成 1297px）。
+    // 用 width 时，元素的实际布局宽度就是缩放后的值，量一次就对。
+    if (!im.dataset.baseW) {
+      // 适应态下的渲染宽度作为基准（只在第一次进放大态时量）
+      im.style.maxWidth = '100%'; im.style.maxHeight = '100%';
+      const w = im.getBoundingClientRect().width;
+      im.dataset.baseW = String(Math.round(w));
+    }
+    const base = Number(im.dataset.baseW);
+    im.style.maxWidth = 'none'; im.style.maxHeight = 'none';
+    im.style.width = (base * VZOOM) + 'px';
+    im.style.height = 'auto';
+  }
+  q('#vlvl').textContent = VZOOM.toFixed(1) + '×';
+}
+function setZoom(z) {
+  // 夹到 [1, 8]：小于 1 没有意义（已经 fit），大于 8 像素糊成方块
+  VZOOM = Math.min(8, Math.max(1, z));
+  applyZoom();
+}
+function zoomBy(f) { setZoom(VZOOM * f); }
+function zoomFit() { setZoom(1); }
+
 function openViewer(i) {
   if (i < 0 || i >= VIEWS.length) return;
   VI = i;
@@ -828,12 +878,59 @@ function openViewer(i) {
   q('#vname').textContent = v.name;
   q('#vpos').textContent = `${v.label} ${i+1} / ${VIEWS.length}`;
   q('#viewer').classList.add('on');
+  delete q('#vimg').dataset.baseW;   // 换图了，基准宽度要重新量
+  setZoom(1);          // 切图后回到适应窗口（否则在 8× 下切图会看不到东西）
 }
-function closeViewer() { q('#viewer').classList.remove('on'); }
+function closeViewer() { q('#viewer').classList.remove('on'); setZoom(1); }
 function stepViewer(d) { if (VI >= 0) openViewer(VI + d); }
 q('#vclose').onclick = closeViewer;
 q('#vprev').onclick = () => stepViewer(-1);
 q('#vnext').onclick = () => stepViewer(1);
+q('#vzi').onclick = () => zoomBy(1.5);
+q('#vzo').onclick = () => zoomBy(1/1.5);
+q('#vzfit').onclick = zoomFit;
+// **1:1 的真实含义是"按原始像素显示"**，不是"缩放 1.0"。
+// 图片是 1066×600，容器可能更窄 —— 所以 1:1 要算出「让 1 个图片像素 = 1 个屏幕像素」的比例。
+q('#vz1').onclick = () => {
+  const im = q('#vimg');
+  if (!im.naturalWidth) return;
+  // 基准宽度（适应态下的渲染宽度）已经记在 dataset 里，直接算比例
+  if (!im.dataset.baseW) { setZoom(1); }
+  const base = Number(im.dataset.baseW) || im.getBoundingClientRect().width;
+  const ratio = im.naturalWidth / Math.max(1, base);
+  setZoom(Math.max(1, ratio));     // 1:1 = 渲染宽度等于图片原始像素宽
+};
+// 点图本身 = 在 适应 和 2× 之间切换（最常见的用法）
+q('#vimg').onclick = () => setZoom(VZOOM <= 1.001 ? 2 : 1);
+// 滚轮缩放（对"读清小字"最顺手）
+q('#viewer .body').addEventListener('wheel', (e) => {
+  if (!q('#viewer').classList.contains('on')) return;
+  e.preventDefault();
+  zoomBy(e.deltaY < 0 ? 1.2 : 1/1.2);
+}, { passive: false });
+// 放大后拖拽平移
+(function(){
+  const body = q('#viewer .body');
+  let drag = null;
+  body.addEventListener('mousedown', (e) => {
+    // 只在放大态下可拖；适应窗口时没有可滚动的空间，拖拽无意义
+    if (!q('#viewer').classList.contains('zoomed')) return;
+    // 别和「点图切换缩放」抢：按住不动是点击（由 img.onclick 处理），
+    // 移动超过 4px 才算拖拽。这里只记录起点，实际区分在 mousemove 里做。
+    e.target.dataset.maybeDrag = '1';
+    drag = { x: e.clientX, y: e.clientY, sl: body.scrollLeft, st: body.scrollTop };
+    body.classList.add('dragging');
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!drag) return;
+    body.scrollLeft = drag.sl - (e.clientX - drag.x);
+    body.scrollTop  = drag.st - (e.clientY - drag.y);
+  });
+  window.addEventListener('mouseup', () => {
+    drag = null; body.classList.remove('dragging');
+  });
+})();
 q('#viewer').addEventListener('click', (e) => { if (e.target.id === 'viewer') closeViewer(); });
 
 document.addEventListener('keydown', (e) => {

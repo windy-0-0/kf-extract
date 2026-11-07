@@ -1276,3 +1276,31 @@
   ```
   真正的 `pageerror` / 其它 console error 仍然计入失败。
 - **状态**：accepted
+
+## D-054 · viewer 缩放：用 `width` 而不是 `transform: scale()`（2026-11-07）
+- **需求**：「读清小字」是这个产品的核心卖点（400×225 认 10.5 个字 / 533×300 认 17 个字）。
+  但 viewer 之前只能整图 fit —— 1066×600 在窄容器里被缩到 0.72，字反而更小。
+  所以缩放不是装饰，是**让卖点成立**。
+- **实现**：`+ / − / 适应 / 1:1` 四键 + 滚轮 + 点图切换 2× + 放大后拖拽平移。
+  切图后**自动回到适应态**（否则在 8× 下切图会看不到新图）。
+- **踩到的 bug（用 e2e 抓出来的）**：
+  第一版用 `transform: scale(VZOOM)` 实现缩放，`1:1` 按键要算「让渲染宽度等于图片原始像素宽」：
+  ```js
+  const fitted = im.getBoundingClientRect().width;   // ← 这里已经包含 scale
+  const ratio = im.naturalWidth / fitted;
+  ```
+  **`getBoundingClientRect().width` 包含 transform 的 scale 效果**，于是比例被乘了两次：
+  实测 `natural=1066 fit渲染=876 1:1渲染=1297 lvl=1.2×` —— **算出 1.2× 却渲染成 1297px（比原图还宽）**。
+- **修法：改用 `width` 缩放，不用 `transform`**
+  - `width` 模式下元素的实际布局宽度就是缩放后的值，量一次就对
+  - 基准宽度（适应态渲染宽度）缓存进 `dataset.baseW`，换图时清掉
+  - 副作用是 `transition` 从 `transform` 改成 `width`（视觉上一样）
+- **为什么这条值得记**：`transform` 不影响布局，但**影响 `getBoundingClientRect`**。
+  凡是「量了尺寸再算缩放比例」的代码，只要中间有 transform，就必须先回到 scale=1 再量，
+  或者干脆别用 transform 做缩放。
+- **e2e 闸门**（`tests/e2e/run.mjs` [15][16][17][18]）：
+  放大 → 适应 → 1:1 按原始像素 → 切图回适应。
+  **已证明会红**：把 1:1 退回成 `setZoom(1)` → `FAIL [17] 1:1渲染=876 比例=0.822`。
+- **一处诚实的说明**：第一版 e2e 断言 `比例 >= 1`，在宽屏上算出正好 ≈1.0，
+  退化后**照样通过**（假绿）。改成断言「渲染宽度 ≈ 图片自然宽度（±8%）」才可靠。
+- **状态**：accepted
