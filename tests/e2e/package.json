@@ -1,0 +1,12 @@
+{
+  "name": "kf-extract-e2e",
+  "private": true,
+  "type": "module",
+  "description": "GUI 端到端回归：用真浏览器驱动真实点击。不进产品依赖，只供测试。",
+  "scripts": {
+    "test": "node run.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "*"
+  }
+}

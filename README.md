@@ -515,6 +515,10 @@ python3 scripts/probe_accept.py --selftest
 
 # 仓库里不许有评测产物（`git add -A` 会绕过 .gitignore，实测踩过）
 python3 scripts/check_no_artifacts.py
+
+# GUI 端到端（真浏览器驱动真实点击；只测后端的话证明不了界面能用）
+cd tests/e2e && npm install     # 只需一次
+cd ../.. && node tests/e2e/run.mjs
 ```
 
 | 测试文件 | 条数 | 覆盖什么 |
@@ -526,7 +530,9 @@ python3 scripts/check_no_artifacts.py
 | `test_sheets.py` | 10 | 排版、烧字、补边不拉伸、清理边界 |
 | `test_state.py` | 11 | 原子写、指纹失效、中断语义 |
 | `test_api.py` | 10 | 结果形状、不变量、时间戳对齐 |
-| `test_cli.py` | 12 | 退出码、参数校验、**旧产物清理** |
+| `test_cli.py` | 14 | 退出码、参数校验、**旧产物清理**、`--probe` 只读 |
+| `test_gui.py` | 14 | 回环绑定、token、目录穿越、**无删除端点**、任务历史、长静默 |
+| `tests/e2e`（19 条）| 19 | **真浏览器**：图片真的加载、点回旧任务、viewer、无 JS 错误 |
 
 > 在**没有 eval/ 素材**的干净克隆里，这 124 条同样 124/124 通过
 > （用到真实视频的用例会 skip，并打印 `(skip: 缺 eval/trailer.mp4)`）。
