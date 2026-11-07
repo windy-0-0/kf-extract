@@ -512,6 +512,9 @@ python3 scripts/freeze_baseline.py --check
 # 三模块探针（含 selftest，证明闸门会红）
 python3 scripts/probe_accept.py
 python3 scripts/probe_accept.py --selftest
+
+# 仓库里不许有评测产物（`git add -A` 会绕过 .gitignore，实测踩过）
+python3 scripts/check_no_artifacts.py
 ```
 
 | 测试文件 | 条数 | 覆盖什么 |
