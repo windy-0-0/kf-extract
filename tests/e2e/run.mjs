@@ -41,6 +41,30 @@ function check(n, name, cond, detail = '') {
   return ok;
 }
 
+/**
+ * 安全地点击历史列表的第 idx 条。
+ *
+ * **为什么要这个**：直接 `.click()` 在列表为空时抛 TypeError，
+ * 会把整轮 e2e 打断 —— 后面的断言一条都不跑，
+ * 表面上看到的是"未捕获异常"而不是"某条断言失败"。
+ * 实测：注入"历史为空"的退化后，就是被这个打断的（D-051 同族）。
+ *
+ * @returns 是否点到了
+ */
+async function clickJob(page, idx = 0) {
+  const ok = await page.evaluate((i) => {
+    const items = document.querySelectorAll('#jobs .job');
+    if (!items.length) return false;
+    // **负数从末尾数**（Python 习惯）：-1 = 最后一条（最早那个）
+    const n = items.length;
+    const k = i < 0 ? Math.max(0, n + i) : Math.min(i, n - 1);
+    items[k].click();
+    return true;
+  }, idx);
+  await new Promise(r => setTimeout(r, 1200));
+  return ok;
+}
+
 async function settleImages(page, timeout = 8000) {
   // 等当前页面的所有 <img> 都加载完（或超时）。
   // 切换任务时不等的话，上一批图片的请求会在下一个用例开始时被取消，
@@ -50,7 +74,7 @@ async function settleImages(page, timeout = 8000) {
     { timeout }).catch(() => {});
 }
 
-async function startGui(port) {
+async function startGui(port, reuseQueue = false) {
   const proc = spawn(PY, ['-m', 'kf.cli', '--gui', '--no-browser', '--port', String(port)], {
     cwd: ROOT,
     env: { ...process.env, PYTHONPATH: path.join(ROOT, 'src') },
@@ -213,6 +237,12 @@ async function main() {
     if (/Failed to load resource.*(ERR_CONNECTION_RESET|ERR_ABORTED|ERR_NETWORK_CHANGED)/.test(t)) {
       expectedHttpErrors.push('[net-reset] ' + t); return;
     }
+    // **重启 GUI 那条用例会主动杀掉服务**，此时页面上的轮询必然拿到
+    // ERR_CONNECTION_REFUSED —— 这是我们自己造成的，不是代码 bug。
+    // （不分类的话"无 JS 错误"这条会被自己的测试永久染红，等于废掉这个闸门。）
+    if (/Failed to load resource.*ERR_CONNECTION_REFUSED/.test(t)) {
+      expectedHttpErrors.push('[restart] ' + t); return;
+    }
     jsErrors.push('console: ' + t);
   });
 
@@ -285,11 +315,8 @@ async function main() {
       JSON.stringify(jobs.map(j => j.meta)));
 
     // 点回旧任务（k=8 那条）
-    await page.evaluate(() => {
-      const js = [...document.querySelectorAll('#jobs .job')];
-      js[js.length - 1].click();
-    });
-    await new Promise(r => setTimeout(r, 1200));
+    // 点最后一条（最早的那个）—— 用安全辅助，列表为空时不崩
+    await clickJob(page, -1);
     const back = await page.evaluate(() => ({
       hint: document.querySelector('#hint').textContent,
       k: document.querySelector('#stats .stat b')?.textContent,
@@ -504,14 +531,60 @@ async function main() {
       await new Promise(r => setTimeout(r, 300));
     }
 
+    // ---------------------------------------------------------------- 6d 重启后历史还在（队列持久化）
+    // 这条是本轮最重要的回归：历史以前只在内存里，重启就没。
+    // 做法：杀掉当前 GUI → 用**同一个队列文件**重启 → 刷新页面看历史。
+    {
+      const before = await page.evaluate(() =>
+        document.querySelectorAll('#jobs .job').length);
+      check(32, '重启前已有历史记录', before > 0, `jobs=${before}`);
+
+      // 用 Node 侧重启 GUI（换端口，同一个 cwd → 同一个 .kf-queue.db）
+      const newPort = port + 1;
+      gui.proc.kill('SIGTERM');
+      await new Promise(r => setTimeout(r, 800));
+      const gui2 = await startGui(newPort, /*reuseQueue*/ true);
+      try {
+        await page.goto(`http://127.0.0.1:${newPort}/?token=${gui2.token}`,
+                        { waitUntil: 'networkidle2' });
+        await new Promise(r => setTimeout(r, 2000));
+        const after = await page.evaluate(() => ({
+          count: document.querySelectorAll('#jobs .job').length,
+          metas: [...document.querySelectorAll('#jobs .job .meta')]
+            .map(e => e.textContent.trim()),
+        }));
+        check(33, '**重启 GUI 后历史还在**', after.count >= before,
+          `重启前 ${before} 条，重启后 ${after.count} 条`);
+        // 点回旧任务，结果要能恢复（不是只有一行标题）
+        // **必须防"没有条目"**：直接 `.click()` 会抛 TypeError 把整轮 e2e 打断，
+        // 后面的断言全不跑（实测把一次干净的 FAIL 变成未捕获异常崩溃）。
+        const hasJob = await page.evaluate(() =>
+          document.querySelectorAll('#jobs .job').length > 0);
+        if (!hasJob) {
+          check(34, '重启后点回旧任务能恢复结果', false, '重启后历史里一条都没有');
+        } else {
+          const clicked = await clickJob(page, 0);
+          const rec = await page.evaluate(() => ({
+            hint: document.querySelector('#hint').textContent,
+            sheets: document.querySelectorAll('#sheets img').length,
+          }));
+          check(34, '重启后点回旧任务能恢复结果',
+            clicked && rec.hint.includes('恢复') && rec.sheets >= 1, JSON.stringify(rec));
+        }
+      } finally {
+        gui2.proc.kill('SIGTERM');
+        // 换回原来的 gui 句柄，供 finally 统一收尾（原进程已退，kill 是幂等的）
+      }
+    }
+
     // ---------------------------------------------------------------- 7 长静默文案存在
     const hasStale = await page.evaluate(() =>
       document.body.innerHTML.includes('仍在工作') ||
       document.documentElement.innerHTML.includes('仍在工作'));
-    check(32, '长静默提示的文案在页面里', hasStale);
+    check(35, '长静默提示的文案在页面里', hasStale);
 
     // ---------------------------------------------------------------- 8 无 JS 错误
-    check(33, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
+    check(36, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
     // 预期内的 4xx 是**故意**打的（非法目录用例）；打印出来让它可以被复核，
     // 而不是默默吞掉 —— 吞掉的话"无 JS 错误"这条就变成永不红。
     console.log(`  (预期内的 HTTP 4xx: ${expectedHttpErrors.length} 条，来自非法目录用例)`);
@@ -531,9 +604,9 @@ async function main() {
   // （实测踩到：`finally 没删干净` 是假红，其实是我检查得太早）。
   const leaked = await readdir(path.join(ROOT, 'eval')).catch(() => []);
   const leftovers = leaked.filter(x => x.startsWith('shots-e2e-'));
-  check(34, 'e2e 临时产物目录已清理', leftovers.length === 0,
+  check(37, 'e2e 临时产物目录已清理', leftovers.length === 0,
     leftovers.length ? `${JSON.stringify(leftovers)}（finally 没删干净）` : '');
-  check(35, '没有把产物写进 eval/shots（上次误提交的那条路径）',
+  check(38, '没有把产物写进 eval/shots（上次误提交的那条路径）',
     !leaked.includes('shots'), 'GUI 默认输出目录被写进了仓库');
 
   console.log(`\n${failures === 0 ? '✅ 全部通过' : `❌ ${failures} 条失败`}  ` +
