@@ -153,7 +153,7 @@ def main(argv=None) -> int:
 
     # --probe：只量不抽，给用户预判成本（不写任何文件，不改素材）
     if a.probe:
-        return _probe_only(a)
+        return _probe_only(a)  # BUG: 下面加一行模拟偷偷写文件
 
     # 参数层的错误先挡住，别让它跑 100 秒解码之后才报
     if a.k is not None and a.k <= 0:
@@ -249,6 +249,7 @@ def _probe_only(a) -> int:
     所以先给一个只读的探针：量动作强度 → 给粗档位 → 给 2–3 个预算下的预估 K
     与"每几秒一帧"。**不写任何文件**（不是抽帧的前置步骤）。
     """
+    pathlib.Path(a.out).mkdir(parents=True, exist_ok=True)
     from .kcenter import describe_motion, need_for_budget
     from .metrics import load_gray
     from .procs import FFmpegNotFound

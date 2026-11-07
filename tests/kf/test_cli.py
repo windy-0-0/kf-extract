@@ -214,6 +214,43 @@ def test_no_sheets_flag_disables_them():
         assert len(list(pathlib.Path(td).glob('frame-*.png'))) == 8
 
 
+def test_probe_writes_no_files():
+    """`--probe` 必须**只读**：不许写任何文件（用户是拿它来预判成本的）。
+
+    这条闸门防的是"探针偷偷抽帧"——如果它写了产物，
+    用户就没法"先看看代价再决定要不要跑"，探针也就失去了意义。
+    """
+    import tempfile
+
+    if not _HAVE:
+        print('  (skip: 缺素材)'); return
+    with tempfile.TemporaryDirectory() as td:
+        # **必须递归比较**：第一版只比 td 这一层，
+        # 而探针退化时创建的是 td/shots/ 这种子目录 —— 一层比较看不见它（实测假绿）。
+        def snapshot():
+            return sorted(str(p.relative_to(td)) for p in pathlib.Path(td).rglob('*'))
+
+        before = snapshot()
+        _run([str(TRAILER), '--probe', '--out', td])
+        after = snapshot()
+        assert before == after, f'--probe 写了东西: {set(after) - set(before)}'
+
+
+def test_probe_reports_cost_estimate():
+    """探针必须给出「多少帧 / 每几秒一帧 / token」三件事，否则用户估不了成本。"""
+    if not _HAVE:
+        print('  (skip: 缺素材)'); return
+    rc, out = _run([str(TRAILER), '--probe'])
+    assert rc == 0, out
+    assert '档位' in out, ' 缺动作档位'
+    assert '最少帧数' in out and '打包 token' in out, '缺成本预估列'
+    assert '非承诺' in out, '缺"非承诺值"提示（这是粗略参考）'
+    # 必须至少给出一个具体的帧数
+    import re
+    m = re.search(r'^\s+(\d{2})\s+(\d+)\s', out, re.M)
+    assert m, f'没解析出任何预算对应的帧数:\n{out}'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0
