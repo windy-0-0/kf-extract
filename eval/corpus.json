@@ -37,6 +37,24 @@
       "file": "spy_clip.mp4",
       "fps": 6,
       "kind": "日漫2D·14.1min·30fps"
+    },
+    {
+      "name": "liveact",
+      "file": "liveact.mp4",
+      "fps": 6,
+      "kind": "真人实拍·街拍·202s·30fps·单镜头连续运动"
+    },
+    {
+      "name": "vlog",
+      "file": "vlog.mp4",
+      "fps": 6,
+      "kind": "真人实拍·Vlog教程·499s·24fps·有字幕"
+    },
+    {
+      "name": "codecast",
+      "file": "codecast.mp4",
+      "fps": 6,
+      "kind": "屏幕录制·编程教程·267s·30fps·静态UI"
     }
   ]
 }

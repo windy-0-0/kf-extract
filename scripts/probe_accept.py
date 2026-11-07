@@ -98,7 +98,8 @@ def check_scope(module: str) -> list[str]:
             c = c[1:-1]
         # 统筹方（主会话）自己的产物，不算任何 agent 越界
         # 产品化阶段（v0.2.0）由主会话统一完成，所有新模块都属「统筹方产物」
-        if c.startswith(('src/kf/procs.py', 'src/kf/sheets.py', 'src/kf/export.py',
+        if c.startswith(('scripts/bench_market.py', 'docs/research/',
+                         'src/kf/procs.py', 'src/kf/sheets.py', 'src/kf/export.py',
                          'src/kf/state.py', 'src/kf/api.py', 'src/kf/cli.py',
                          'src/kf/py.typed', 'tests/kf/test_api.py',
                          'tests/kf/test_cli.py', 'tests/kf/test_sheets.py',

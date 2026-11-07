@@ -85,7 +85,7 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
     from .export import manifest, prune_stale, summary_markdown, write_json
     from .kcenter import kcenter, kcenter_balanced, need_for_budget, time_coverage
     from .layout import CANVAS_PROFILES, DEFAULT_CANVAS_PROFILE, constraints_for, plan
-    from .metrics import load_gray
+    from .metrics import load_gray, static_runs
     from .procs import FFmpegNotFound, describe, find_ffmpeg, find_ffprobe
     from .state import Interrupted, RunState, SignalGuard, fingerprint, stream_gray
     from . import sheets as S
@@ -212,6 +212,16 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
     dark_total = int((_dark < 8.0).sum())
     dark_sel = [int(k) for k in keys if _dark[k] < 8.0]
 
+    # ---- 静态段（假绿探测器，见 metrics.static_runs 的 docstring）
+    # **只报告，绝不改选帧**：这类"看起来没变化其实有变化"的段，
+    # 只有在用户知情时才有价值；自动规避会变成第二个未声明的目标。
+    _runs = static_runs(X, min_frames=max(2, int(round(fps))))
+    _runs_info = [{'start_sec': round(a / fps, 1), 'end_sec': round(b / fps, 1),
+                   'dur_sec': round((b - a) / fps, 1), 'frames': int(b - a + 1)}
+                  for a, b in _runs]
+    _runs_info.sort(key=lambda r: -r['dur_sec'])
+    _longest_static = _runs_info[0] if _runs_info else None
+
     # ---- 派生指标（与选帧解耦，便于复核）
     cov = time_coverage(keys, n)
     ks = sorted(keys)
@@ -262,6 +272,8 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
         'time_coverage': cov,
         'max_gap_sec': max_gap_sec,
         'median_gap_sec': median_gap_sec,
+        'static_segments': {'count': len(_runs_info), 'longest': _longest_static,
+                            'top': _runs_info[:5]},
         'dark_frames': {'in_video': dark_total, 'in_selection': len(dark_sel),
                         'selection_idx': dark_sel,
                         'threshold_mean_gray': 8.0},
@@ -284,6 +296,13 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.3,
             '时间戳与导帧位置可能有 ±1 帧的偏差。装 ffmpeg 全套可消除此警告。')
     if dur <= 0:
         result['warnings'].append('拿不到时长：时间戳列可能错位（导帧仍会尝试）')
+    if _longest_static and _longest_static['dur_sec'] >= 20:
+        result['warnings'].append(
+            f"发现一段连续 {_longest_static['dur_sec']}s 几乎静止的画面"
+            f"（{_longest_static['start_sec']}s→{_longest_static['end_sec']}s）。"
+            "像素度量会把它判为零变化，但里面可能确有内容变化（如录屏里新增的窗口/文字）。"
+            "这类素材的选帧结果需人工抽查。")
+
     if len(dark_sel) > 0:
         pct = round(100.0 * len(dark_sel) / max(1, chosen_k), 1)
         result['warnings'].append(

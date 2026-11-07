@@ -143,6 +143,66 @@ def test_no_images_still_reports():
     assert r.images == []
 
 
+def test_static_segments_reported_on_screencast():
+    """录屏素材必须报出「连续静止段」—— 这是我们唯一诚实的处理方式。
+
+    实测背景（D-032）：267 秒编程录屏里，199.5s→266.7s 这 67 秒被像素度量判成
+    零变化（404 帧没有一帧"不同"），但画面上确实多了终端面板与运行输出。
+    这类"看起来没变其实有变"的段必须被**报出来**，而不是藏在漂亮的 maxdist 后面。
+
+    这条测试同时锁定两件事：
+      ① 该字段必须存在且带秒数（不能只给帧号，用户读不懂）
+      ② 阈值不能形同虚设（录屏的 203s 静止段必须被认定）
+    """
+    if not _HAVE:
+        _skip(); return
+    from kf.metrics import load_gray, static_runs
+
+    X = load_gray(str(TRAILER), sample_fps=12)
+    runs = static_runs(X, min_frames=12)
+    # trailer 有静止段（片头/转场），必须能找到
+    assert len(runs) >= 1, '短预告上也该能找到静止段（否则检测器失效）'
+
+    # **录屏素材上的强断言**：这条才是 D-032 的回归闸门。
+    # 267s 编程录屏里有连续 200s+ 被判零变化的段；检测器找不到它，说明阈值或实现坏了。
+    CAST = ROOT / 'eval/codecast.mp4'
+    if CAST.exists():
+        Xc = load_gray(str(CAST), sample_fps=6)
+        rc = static_runs(Xc, min_frames=6)
+        longest = max((b - a + 1 for a, b in rc), default=0)
+        assert longest / 6 >= 100, (
+            f'录屏上最长静止段只有 {longest/6:.1f}s，'
+            f'但实测应为 200s+（阈值 {8.0} 判不出说明检测器失效）')
+    for a, b in runs:
+        assert 0 <= a <= b < len(X), f'区间越界: {(a,b)}'
+        assert b - a + 1 >= 12
+
+    r = extract(str(TRAILER), k=16)
+    st = r['static_segments']
+    assert 'count' in st and 'top' in st, '缺 static_segments 字段'
+    if st['longest']:
+        assert 'start_sec' in st['longest'] and 'dur_sec' in st['longest'], \
+            '静止段必须带秒数（帧号用户读不懂）'
+
+
+def test_static_segments_does_not_change_selection():
+    """报告静止段**只许报告，不许改变选帧结果**。
+
+    这是刻意的设计约束（D-032）：自动跳过静止段会变成第二个未声明的目标，
+    破坏"只有一条判据"的立身之本。这条测试防止将来有人"顺手优化"。
+    """
+    if not _HAVE:
+        _skip(); return
+    from kf.kcenter import kcenter_balanced
+
+    X = __import__('kf.metrics', fromlist=['load_gray']).load_gray(str(TRAILER), sample_fps=12)
+    # 直接调选帧：结果不应依赖 static_runs 是否被调用
+    a = kcenter_balanced(X, 16, fps=12, alpha=0.3)['keys']
+    __import__('kf.metrics', fromlist=['static_runs']).static_runs(X, min_frames=12)
+    b = kcenter_balanced(X, 16, fps=12, alpha=0.3)['keys']
+    assert a == b, '调用静止段检测后选帧结果变了（说明它偷偷影响了算法）'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

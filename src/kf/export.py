@@ -122,6 +122,11 @@ def summary_markdown(report: dict, sheets: list, images: list) -> str:
         L.append(f'- 时间覆盖：{cov.get("buckets_hit")}/{cov.get("buckets")} 段'
                  f'（均匀 = 每段都有）')
     L.append(f'- 时间均衡权重：{report.get("balance")}')
+    st = report.get('static_segments') or {}
+    lg = st.get('longest')
+    if lg and lg.get('dur_sec', 0) >= 10:
+        L.append(f'- ⚠️ **连续静止 {lg["dur_sec"]}s**（{lg["start_sec"]}s→{lg["end_sec"]}s）'
+                 f'—— 像素度量把这段判为零变化，但它可能含有局部新增内容（录屏/PPT/字幕）')
     dk = report.get('dark_frames') or {}
     if dk.get('in_selection'):
         L.append(f'- 黑场：选中帧里 **{dk["in_selection"]} 帧近乎全黑**'
