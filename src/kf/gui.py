@@ -68,6 +68,9 @@ class Job:
         self.stop_requested = False   # 循环内检查（R299：不能只靠杀线程）
         self.thread = None
         self.key = ''                 # 在途去重用的键
+        self.started = time.time()     # 历史列表要显示"几点开始的"
+        self.name = pathlib.Path(video).name
+        self.last_progress = time.time()   # 最后一次进度更新的时刻
 
     def snapshot(self) -> dict:
         return {'id': self.id, 'status': self.status, 'stage': self.stage,
@@ -75,7 +78,37 @@ class Job:
                 'elapsed': round(time.time() - self.t0, 1),
                 'video': self.video, 'params': self.params,
                 'error': self.error,
+                # 距上次进度更新多久：前端 >10s 时要显示"仍在工作（已 N 秒未更新）"
+                'stale_seconds': round(time.time() - self.last_progress, 1),
                 'result': self.result if self.status == 'done' else None}
+
+    def brief(self) -> dict:
+        """历史列表用：只要够显示一行，不带 result（那可能很大）。
+
+        **为什么单独一个 brief 而不是复用 snapshot**：历史列表可能有几十条，
+        每条都带完整的 images/sheets/warnings 会让一次轮询搬运几百 KB。
+        列表只需要"这是什么、跑到哪、好没好"。
+        """
+        return {
+            'id': self.id,
+            'name': self.name,
+            'status': self.status,
+            'stage': self.stage,
+            'frac': round(self.frac, 4),
+            'elapsed': round(time.time() - self.t0, 1),
+            'started': round(self.started, 1),
+            'params': {k: self.params.get(k) for k in ('k', 'budget', 'canvas', 'balance')},
+            'has_result': self.result is not None,
+            'error': self.error,
+        }
+
+    def stale_seconds(self) -> float:
+        """距离上一次有进度更新过了多久（秒）。
+
+        **为什么需要**：29 分钟素材解码要 40 秒，纯百分比看着像卡死。
+        前端要能区分「在动」和「真的没动」（R35 长静默必须自己喊出来）。
+        """
+        return round(time.time() - self.last_progress, 1)
 
 
 class App:
@@ -144,6 +177,7 @@ class App:
                 if job.stop_requested:
                     raise Interrupted('GUI_STOP')
                 job.stage, job.frac, job.msg = stage, frac, msg
+                job.last_progress = time.time()
 
             r = extract(job.video, k=p.get('k'), budget=p.get('budget'),
                         fps=p.get('fps', 6.0), balance=p.get('balance', 0.2),
@@ -176,6 +210,37 @@ class App:
             job.status = 'failed'
             job.error = f'{type(e).__name__}: {e}'
             job.msg = job.error
+
+    # ---------------------------------------------------------- 任务历史
+    def list_jobs(self) -> list[dict]:
+        """本进程内跑过的所有任务，最新的在前。
+
+        **只存内存**（D-037）：GUI 是短生命周期进程，落盘会引入
+        「上次崩溃留下僵尸任务」，对单机工具是净负担。
+        """
+        with self.lock:
+            jobs = list(self.jobs.values())
+        return [j.brief() for j in sorted(jobs, key=lambda j: -j.started)]
+
+    def out_dir_error(self, out) -> str | None:
+        """检查输出目录是否可用。返回**可读的中文原因**，None = 可用。
+
+        **为什么把校验搬到 App 里**：原来只写在 `_api_start` 里、直接返回
+        `{'error': '输出目录必须在家目录或项目目录下'}`，前端只能把它当字符串弹出来，
+        用户不知道"到底什么被禁止了、该怎么改"。这里返回结构化原因。
+        """
+        p = pathlib.Path(out).expanduser()
+        try:
+            rp = p.resolve()
+        except (OSError, RuntimeError) as e:
+            return f'这个路径无法解析：{e}'
+        allowed = [pathlib.Path.home().resolve(), self.root.resolve()]
+        if not any(str(rp).startswith(str(d)) for d in allowed):
+            return (f'输出目录必须在 {allowed[0]} 或 {allowed[1]} 之下。'
+                    f'你给的是 {rp}')
+        if rp.exists() and not rp.is_dir():
+            return f'{rp} 已存在且不是目录，选一个别的名字'
+        return None
 
     # ---------------------------------------------------------- 列素材
     def list_videos(self) -> list[dict]:
@@ -251,6 +316,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self._token_ok():
                 return self._send(403, {'error': 'forbidden'})
             return self._send(200, {'videos': self.app.list_videos()})
+        if path == '/api/jobs':
+            if not self._token_ok():
+                return self._send(403, {'error': 'forbidden'})
+            return self._send(200, {'jobs': self.app.list_jobs()})
         if path == '/api/job':
             if not self._token_ok():
                 return self._send(403, {'error': 'forbidden'})
@@ -293,11 +362,11 @@ class Handler(BaseHTTPRequestHandler):
         if (k is None) == (budget is None):
             return self._send(400, {'error': 'k 与 budget 必须且只能给一个'})
         out = body.get('out') or str(pathlib.Path(video).parent / 'shots')
-        # **不许写到系统目录**：只允许用户 home 之下或仓库之内的路径
-        op = pathlib.Path(out).resolve()
-        if not any(str(op).startswith(str(d.resolve())) for d in
-                   [pathlib.Path.home(), self.app.root]):
-            return self._send(400, {'error': '输出目录必须在家目录或项目目录下'})
+        bad = self.app.out_dir_error(out)
+        if bad:
+            # **结构化错误**：code 让前端能按类型处理，message 是给用户看的原话
+            return self._send(400, {'error': bad, 'code': 'bad_out_dir'})
+        op = pathlib.Path(out).expanduser().resolve()
         params = {'k': int(k) if k is not None else None,
                   'budget': float(budget) if budget is not None else None,
                   'fps': float(body.get('fps') or 6.0),
@@ -376,98 +445,183 @@ _INDEX_HTML = r"""<!doctype html>
 <title>KF-Extract · 关键帧抽取</title>
 <style>
 :root{--bg:#14161a;--panel:#1b1f26;--line:#2b3240;--fg:#e6e9ef;--mut:#8b95a7;
---acc:#4a9eff;--ok:#35c07a;--warn:#f0b400;--bad:#ec5a5a}
+--acc:#4a9eff;--ok:#35c07a;--warn:#f0b400;--bad:#ec5a5a;--run:#d94a4a}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);
 font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif}
-.wrap{max-width:1080px;margin:0 auto;padding:22px 18px 60px}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 18px 60px;display:grid;
+gap:16px;grid-template-columns:minmax(0,1fr) 300px;align-items:start}
+/* 窄屏时历史列表放到**下面**：主内容（选素材/参数/结果）才是用户首先要用到的。
+   放到上面会把整个主流程推到首屏之外（实测截图确认了这点）。 */
+@media(max-width:860px){.wrap{grid-template-columns:1fr}.side{order:2}.main{order:1}}
 h1{font-size:20px;margin:0 0 4px;letter-spacing:.3px}
-.sub{color:var(--mut);margin-bottom:20px;font-size:13px}
+.sub{color:var(--mut);margin-bottom:18px;font-size:13px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;
 padding:16px;margin-bottom:14px}
 label{display:block;font-size:12px;color:var(--mut);margin:0 0 5px}
 input,select{width:100%;background:#0f1216;border:1px solid var(--line);
 color:var(--fg);border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit}
+input:focus,select:focus,button:focus-visible{outline:2px solid var(--acc);
+outline-offset:1px}
 .row{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 button{background:var(--acc);border:0;color:#fff;padding:10px 18px;border-radius:7px;
-font-size:14px;font-weight:600;cursor:pointer}
+font-size:14px;font-weight:600;cursor:pointer;font-family:inherit}
 button:disabled{opacity:.45;cursor:not-allowed}
 button.stop{background:var(--bad)}
+button.ghost{background:#0f1216;border:1px solid var(--line);color:var(--fg)}
 .bar{height:6px;background:#0f1216;border:1px solid var(--line);border-radius:4px;overflow:hidden}
 .bar>i{display:block;height:100%;width:0;background:var(--acc);transition:width .25s}
-.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin:14px 0}
+.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));margin:14px 0}
 .stat{background:#0f1216;border:1px solid var(--line);border-radius:8px;padding:10px}
 .stat b{display:block;font-size:19px;letter-spacing:.2px}
 .stat span{color:var(--mut);font-size:11px}
-.gallery{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-.gallery img{width:100%;border-radius:7px;border:1px solid var(--line);display:block}
+.gallery{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(240px,1fr))}
+.gallery img{width:100%;border-radius:7px;border:1px solid var(--line);display:block;
+cursor:zoom-in;transition:border-color .15s}
+.gallery img:hover{border-color:var(--acc)}
 .warn{border-left:3px solid var(--warn);background:#241f10;padding:9px 12px;
 border-radius:6px;margin:8px 0;font-size:13px}
 .err{border-left:3px solid var(--bad);background:#241212}
 .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:99px;
 background:#0f1216;border:1px solid var(--line);color:var(--mut);margin-right:6px}
+/* 提示行独占一行且可换行：放在按钮同一行时，长错误文案会把按钮挤变形（实测） */
+.hintline{font-size:12px;color:var(--mut);margin-top:9px;line-height:1.5;
+word-break:break-word}
 h2{font-size:14px;margin:18px 0 8px;color:var(--mut);font-weight:600}
-</style></head><body><div class="wrap">
-<h1>KF-Extract</h1>
-<div class="sub">从视频选出覆盖最优的关键帧，并拼成图集 · 纯本地，不上传任何素材</div>
+h2:first-child{margin-top:0}
 
-<div class="card">
-  <h2 style="margin-top:0">1 · 选素材</h2>
-  <div class="row">
-    <div style="grid-column:1/-1"><label>素材（只会列出本地视频）</label>
+/* ---- 历史列表 ---- */
+.joblist{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto}
+.job{background:#0f1216;border:1px solid var(--line);border-radius:8px;
+padding:9px 11px;cursor:pointer;display:flex;gap:8px;align-items:center}
+.job:hover{border-color:var(--acc)}
+.job.sel{border-color:var(--acc);background:#12202f}
+.job .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+min-width:0;flex:1 1 auto}
+.job .meta{flex:0 0 auto}
+.job .meta{color:var(--mut);font-size:11px;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;flex:0 0 8px}
+.dot.done{background:var(--ok)} .dot.failed{background:var(--bad)}
+.dot.interrupted{background:var(--warn)} .dot.queued{background:var(--mut)}
+.dot.running{background:var(--run);box-shadow:0 0 0 3px rgba(217,74,74,.25)}
+.job.running{background:#2b1618;border-color:var(--run)}
+
+/* ---- viewer ---- */
+#viewer{position:fixed;inset:0;background:rgba(8,9,12,.94);z-index:99;
+display:none;flex-direction:column}
+#viewer.on{display:flex}
+#viewer .top{padding:10px 14px;display:flex;gap:12px;align-items:center;
+color:var(--mut);font-size:12px;border-bottom:1px solid var(--line)}
+#viewer .body{flex:1;display:flex;align-items:center;justify-content:center;
+overflow:auto;padding:12px}
+#viewer img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px}
+#viewer button{background:#0f1216;border:1px solid var(--line);color:var(--fg);
+padding:5px 12px;font-size:13px}
+</style></head><body>
+<div class="wrap">
+<div class="main">
+  <h1>KF-Extract</h1>
+  <div class="sub">从视频选出覆盖最优的关键帧，并拼成图集 · 纯本地，不上传任何素材</div>
+
+  <div class="card">
+    <h2>1 · 选素材</h2>
+    <div><label>素材（只列出本地视频）</label>
       <select id="video"><option value="">正在扫描…</option></select></div>
+    <div class="row" style="margin-top:12px">
+      <div><label>抽多少帧 (--k)</label><input id="k" type="number" value="40" min="1"></div>
+      <div><label>时间均衡</label>
+        <select id="balance">
+          <option value="0">0 · 纯内容优先（会留长空白）</option>
+          <option value="0.2" selected>0.2 · 推荐（覆盖代价 +1.4%）</option>
+          <option value="0.3">0.3 · 更稳（代价 +3%）</option>
+        </select></div>
+      <div><label>出图档位</label>
+        <select id="canvas">
+          <option value="readable" selected>readable · 能读清小字</option>
+          <option value="cheap">cheap · 省 token</option>
+          <option value="max">max · 最清晰</option>
+        </select></div>
+      <div><label>分析帧率</label><input id="fps" type="number" value="6" min="1" max="30"></div>
+    </div>
+    <div style="margin-top:12px">
+      <label>输出目录
+        <span class="tag" id="outtag">默认：素材旁的 shots/</span></label>
+      <div style="display:flex;gap:8px">
+        <input id="out" placeholder="留空 = 素材旁的 shots/" autocomplete="off">
+        <button class="ghost" id="outclear" title="恢复默认"
+                style="flex:0 0 auto;white-space:nowrap">默认</button>
+      </div>
+      <div style="color:var(--mut);font-size:11px;margin-top:5px">
+        只允许家目录或项目目录之下（防止误写到系统目录）
+      </div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <button id="go">开始抽取</button>
+      <button id="stop" class="stop" disabled>停止</button>
+    </div>
+    <div id="hint" class="hintline">就绪</div>
   </div>
-  <div class="row" style="margin-top:12px">
-    <div><label>抽多少帧 (--k)</label><input id="k" type="number" value="40" min="1"></div>
-    <div><label>时间均衡 (--balance)</label>
-      <select id="balance">
-        <option value="0">0 · 纯内容优先（会留长空白）</option>
-        <option value="0.2" selected>0.2 · 推荐（覆盖代价 +1.4%）</option>
-        <option value="0.3">0.3 · 更强均衡（代价 +3%）</option>
-      </select></div>
-    <div><label>出图档位 (--canvas)</label>
-      <select id="canvas">
-        <option value="readable" selected>readable · 能读清小字</option>
-        <option value="cheap">cheap · 省 token</option>
-        <option value="max">max · 最清晰</option>
-      </select></div>
-    <div><label>分析帧率 (--fps)</label><input id="fps" type="number" value="6" min="1" max="30"></div>
+
+  <div class="card" id="progcard" style="display:none">
+    <h2>2 · 进度</h2>
+    <div class="bar"><i id="bar"></i></div>
+    <div style="margin-top:8px;color:var(--mut);font-size:12px" id="stage">—</div>
   </div>
-  <div style="margin-top:14px;display:flex;gap:10px;align-items:center">
-    <button id="go">开始抽取</button>
-    <button id="stop" class="stop" disabled>停止</button>
-    <span id="hint" class="tag">就绪</span>
+
+  <div class="card" id="rescard" style="display:none">
+    <h2>3 · 结果</h2>
+    <div class="stats" id="stats"></div>
+    <div id="warns"></div>
+    <h2>拼图（点开可放大）</h2>
+    <div class="gallery" id="sheets"></div>
+    <h2>单帧（点开可放大）</h2>
+    <div class="gallery" id="frames"></div>
   </div>
 </div>
 
-<div class="card" id="progcard" style="display:none">
-  <h2 style="margin-top:0">2 · 进度</h2>
-  <div class="bar"><i id="bar"></i></div>
-  <div style="margin-top:8px;color:var(--mut);font-size:12px" id="stage">—</div>
+<div class="side">
+  <div class="card">
+    <h2>任务历史</h2>
+    <div class="joblist" id="jobs">
+      <div class="meta">还没有任务</div>
+    </div>
+  </div>
+</div>
 </div>
 
-<div class="card" id="rescard" style="display:none">
-  <h2 style="margin-top:0">3 · 结果</h2>
-  <div class="stats" id="stats"></div>
-  <div id="warns"></div>
-  <h2>拼图（每格标了序号与时间）</h2>
-  <div class="gallery" id="sheets"></div>
-  <h2>单帧</h2>
-  <div class="gallery" id="frames"></div>
+<div id="viewer">
+  <div class="top">
+    <button id="vprev">←</button>
+    <span id="vpos">—</span>
+    <button id="vnext">→</button>
+    <span id="vname" style="flex:1;overflow:hidden;text-overflow:ellipsis"></span>
+    <button id="vclose">关闭 (Esc)</button>
+  </div>
+  <div class="body"><img id="vimg" alt=""></div>
 </div>
-</div>
+
 <script>
 const TOKEN = "%%KF_TOKEN%%";
 const q = (s) => document.querySelector(s);
-let JOB = null, TIMER = null;
+let JOB = null, TIMER = null, JOBS = [], VIEWS = [], VI = -1;
 
 async function api(path, opt) {
   const u = path + (path.includes('?') ? '&' : '?') + 'token=' + TOKEN;
   const r = await fetch(u, opt);
-  if (!r.ok) throw new Error((await r.json().catch(()=>({}))).error || r.status);
-  return r.json();
+  let body = null;
+  try { body = await r.json(); } catch(e) {}
+  if (!r.ok) {
+    const err = new Error((body && body.error) || ('HTTP ' + r.status));
+    err.code = body && body.code;
+    throw err;
+  }
+  return body;
 }
-function setHint(t, bad) { const h=q('#hint'); h.textContent=t; h.style.color = bad?'var(--bad)':''; }
+function setHint(t, bad) {
+  const h = q('#hint');
+  h.textContent = t;
+  h.style.color = bad ? 'var(--bad)' : 'var(--mut)';
+}
 
 async function loadVideos() {
   try {
@@ -479,6 +633,22 @@ async function loadVideos() {
   } catch(e) { q('#video').innerHTML = '<option value="">扫描失败: '+e.message+'</option>'; }
 }
 
+// ---- 输出目录：记住上次选择
+const OUTKEY = 'kf.out';
+function syncOutTag() {
+  const v = q('#out').value.trim();
+  q('#outtag').textContent = v ? '自定义' : '默认：素材旁的 shots/';
+}
+q('#out').addEventListener('input', syncOutTag);
+q('#outclear').onclick = () => { q('#out').value=''; localStorage.removeItem(OUTKEY); syncOutTag(); };
+const savedOut = localStorage.getItem(OUTKEY);
+if (savedOut) { q('#out').value = savedOut; }
+syncOutTag();
+q('#out').addEventListener('change', () => {
+  const v = q('#out').value.trim();
+  if (v) localStorage.setItem(OUTKEY, v); else localStorage.removeItem(OUTKEY);
+});
+
 q('#go').onclick = async () => {
   const video = q('#video').value;
   if (!video) return setHint('先选一个素材', true);
@@ -489,12 +659,19 @@ q('#go').onclick = async () => {
   try {
     const body = {video, k: Number(q('#k').value), balance: Number(q('#balance').value),
                   canvas: q('#canvas').value, fps: Number(q('#fps').value)};
+    const outv = q('#out').value.trim();
+    if (outv) body.out = outv;
     const r = await api('/api/start', {method:'POST',
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     JOB = r.id;
     if (r.deduped) setHint('同一个任务已在跑，复用它（不会重复产出）');
-    poll();
-  } catch(e) { setHint('提交失败: '+e.message, true); q('#go').disabled=false; q('#stop').disabled=true; }
+    poll(); loadJobs();
+  } catch(e) {
+    // 输出目录错误要给出可读原因（不是原始 JSON）
+    setHint(e.code === 'bad_out_dir' ? '输出目录不可用：' + e.message : '提交失败: ' + e.message, true);
+    q('#go').disabled=false; q('#stop').disabled=true;
+    if (e.code === 'bad_out_dir') q('#out').focus();
+  }
 };
 
 q('#stop').onclick = async () => {
@@ -505,6 +682,11 @@ q('#stop').onclick = async () => {
                           body: JSON.stringify({id: JOB})});
 };
 
+function stageName(s) {
+  return {decode:'解码', select:'选帧', export_frames:'导出单帧',
+          sheets:'拼图', done:'完成'}[s] || s || '—';
+}
+
 function poll() {
   clearTimeout(TIMER);
   TIMER = setTimeout(async () => {
@@ -513,7 +695,12 @@ function poll() {
     try { j = await api('/api/job?id=' + encodeURIComponent(JOB)); }
     catch(e) { setHint('查询失败: '+e.message, true); return poll(); }
     q('#bar').style.width = (j.frac*100).toFixed(1)+'%';
-    q('#stage').textContent = stageName(j.stage) + ' · ' + (j.msg||'') + ' · ' + j.elapsed + 's';
+    let line = stageName(j.stage) + ' · ' + (j.msg||'') + ' · ' + j.elapsed + 's';
+    // 长静默必须自己喊出来（R35）：29min 素材解码 40 秒，纯百分比像卡死
+    if (j.status === 'running' && j.stale_seconds >= 10) {
+      line += ' —— 仍在工作（已 ' + Math.round(j.stale_seconds) + ' 秒无更新）';
+    }
+    q('#stage').textContent = line;
     if (j.status === 'done') { finish(j); return; }
     if (j.status === 'failed') { fail(j); return; }
     if (j.status === 'interrupted') { interrupted(j); return; }
@@ -522,25 +709,30 @@ function poll() {
   }, 700);
 }
 
-function stageName(s) {
-  return {decode:'解码', select:'选帧', export_frames:'导出单帧',
-          sheets:'拼图', done:'完成'}[s] || s || '—';
-}
+// ---- 每个任务的结果缓存（历史点回来用）
+const RES = {};
 
 function finish(j) {
   q('#go').disabled = false; q('#stop').disabled = true;
   setHint('完成 · ' + j.result.elapsed_s + 's');
+  RES[j.id] = j;
+  renderResult(j);
+  loadJobs();
+}
+
+function renderResult(j) {
   q('#rescard').style.display = 'block';
   const r = j.result;
   const st = [
     ['选中帧数', r.selected_k],
-    ['覆盖 maxdist', r.maxdist.toFixed(1)],
+    ['覆盖 maxdist', (r.maxdist ?? 0).toFixed(1)],
     ['最大空白', r.max_gap_sec + 's'],
     ['中位空白', r.median_gap_sec + 's'],
     ['时间覆盖', (r.time_coverage?.buckets_hit||0)+'/'+(r.time_coverage?.buckets||10)],
     ['token 合计', (r.canvas_plan?.tokens_total ?? '—')],
   ];
   q('#stats').innerHTML = st.map(([k,v])=>`<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+
   const w = [];
   if (r.static_segments?.longest && r.static_segments.longest.dur_sec >= 10) {
     const L = r.static_segments.longest;
@@ -551,27 +743,39 @@ function finish(j) {
     w.push(`选中帧里有 ${r.dark_frames.in_selection} 帧近乎全黑，占图集容量但不含信息`);
   }
   (r.warnings||[]).slice(0,4).forEach(x => w.push(x));
-  q('#warns').innerHTML = w.map(x=>`<div class="warn">${x}</div>`).join('');
-  // **整段路径一起编码**（含斜杠）：否则 `/files//Users/...` 变成双斜杠，
-  // 服务端切出来的相对路径会丢一段（实测 404）。
+  q('#warns').innerHTML = w.map(x=>`<div class="warn">${esc(x)}</div>`).join('');
+
+  // 图片 URL：整段路径一起编码（含斜杠），否则服务端切出的相对路径会丢层级
   const fileUrl = (name) =>
     '/files/' + encodeURIComponent(r.out.replace(/\/+$/,'') + '/' + name) +
     '?token=' + TOKEN;
-  q('#sheets').innerHTML = r.sheets.map(n=>
-    `<img src="${fileUrl(n)}" alt="${n}">`).join('');
-  q('#frames').innerHTML = r.images.slice(0,12).map(n=>
-    `<img src="${fileUrl(n)}" alt="${n}">`).join('');
+  VIEWS = [];
+  const addViewer = (el, arr, label) => {
+    arr.forEach((nm,i) => {
+      const im = document.createElement('img');
+      im.src = fileUrl(nm); im.alt = nm;
+      im.dataset.vi = VIEWS.length;
+      VIEWS.push({src: fileUrl(nm), name: nm, label});
+      im.onclick = () => openViewer(Number(im.dataset.vi));
+      el.appendChild(im);
+    });
+  };
+  q('#sheets').innerHTML = ''; q('#frames').innerHTML = '';
+  addViewer(q('#sheets'), r.sheets, '拼图');
+  addViewer(q('#frames'), r.images, '单帧');
   if (r.images.length > 12) {
     q('#frames').innerHTML += `<div class="tag">还有 ${r.images.length-12} 张，见输出目录</div>`;
   }
 }
 
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
 function fail(j) {
   q('#go').disabled = false; q('#stop').disabled = true;
-  setHint('失败', true);
-  q('#rescard').style.display = 'block';
+  setHint('失败', true); q('#rescard').style.display = 'block';
   q('#stats').innerHTML = '';
-  q('#warns').innerHTML = `<div class="warn err">${j.error||j.msg}</div>`;
+  q('#warns').innerHTML = `<div class="warn err">${esc(j.error||j.msg)}</div>`;
+  loadJobs();
 }
 
 function interrupted(j) {
@@ -579,9 +783,72 @@ function interrupted(j) {
   setHint('已停止（不是失败）', false);
   q('#rescard').style.display = 'block';
   q('#stats').innerHTML = '';
-  q('#warns').innerHTML = `<div class="warn">${j.msg}</div>`;
+  q('#warns').innerHTML = `<div class="warn">${esc(j.msg)}</div>`;
+  loadJobs();
 }
 
+// ---- 任务历史
+const STATUS_CN = {queued:'排队', running:'运行中', done:'完成',
+                   failed:'失败', interrupted:'已停止'};
+async function loadJobs() {
+  try { const d = await api('/api/jobs'); JOBS = d.jobs || []; }
+  catch(e) { return; }
+  const el = q('#jobs');
+  if (!JOBS.length) { el.innerHTML = '<div class="meta">还没有任务</div>'; return; }
+  el.innerHTML = JOBS.map(j => {
+    const on = (j.id === JOB) ? ' sel' : '';
+    const run = (j.status === 'running') ? ' running' : '';
+    const kk = j.params.k != null ? `k=${j.params.k}` : `budget=${j.params.budget}`;
+    return `<div class="job${on}${run}" data-id="${j.id}">
+      <span class="dot ${j.status}"></span>
+      <span class="nm">${esc(j.name)}</span>
+      <span class="meta">${kk} · ${STATUS_CN[j.status]||j.status} · ${j.elapsed}s</span>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('.job').forEach(d => d.onclick = () => selectJob(d.dataset.id));
+}
+
+async function selectJob(id) {
+  JOB = id; loadJobs();
+  const cached = RES[id];
+  if (cached) { renderResult(cached); setHint('已恢复该任务的结果'); return; }
+  try {
+    const j = await api('/api/job?id=' + encodeURIComponent(id));
+    if (j.status === 'done' && j.result) { RES[id]=j; renderResult(j); setHint('已恢复该任务的结果'); }
+    else { setHint('该任务状态：' + (STATUS_CN[j.status]||j.status)); }
+  } catch(e) { setHint('找不到该任务', true); }
+}
+
+// ---- viewer
+function openViewer(i) {
+  if (i < 0 || i >= VIEWS.length) return;
+  VI = i;
+  const v = VIEWS[i];
+  q('#vimg').src = v.src;
+  q('#vname').textContent = v.name;
+  q('#vpos').textContent = `${v.label} ${i+1} / ${VIEWS.length}`;
+  q('#viewer').classList.add('on');
+}
+function closeViewer() { q('#viewer').classList.remove('on'); }
+function stepViewer(d) { if (VI >= 0) openViewer(VI + d); }
+q('#vclose').onclick = closeViewer;
+q('#vprev').onclick = () => stepViewer(-1);
+q('#vnext').onclick = () => stepViewer(1);
+q('#viewer').addEventListener('click', (e) => { if (e.target.id === 'viewer') closeViewer(); });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (q('#viewer').classList.contains('on')) closeViewer(); return; }
+  if (q('#viewer').classList.contains('on')) {
+    if (e.key === 'ArrowLeft') { stepViewer(-1); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { stepViewer(1); e.preventDefault(); }
+    return;
+  }
+  // 参数区里 Enter = 开始，Ctrl/Cmd+Enter 也触发
+  if (e.key === 'Enter' && !q('#go').disabled) { q('#go').click(); }
+});
+
 loadVideos();
+loadJobs();
+setInterval(loadJobs, 1200);
 </script></body></html>
 """
