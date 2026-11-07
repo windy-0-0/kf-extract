@@ -349,14 +349,79 @@ async function main() {
       await page.evaluate((out) => { document.querySelector('#out').value = out; }, outDirTmp);
     }
 
+    // ---------------------------------------------------------------- 6c 批量模式
+    // 用**两个最小的素材**（trailer 6.4MB + codecast 13.9MB），
+    // 避免拿 mv227 那种 2726 帧的跑几分钟（实测会把 e2e 拖到超时）。
+    {
+      const bdir = await newTmpDir();
+      // **必须真的点那个标签**，不能直接设 checked 再调 onchange。
+      // 实测教训：第一版用 evaluate 直接改状态，于是「label 点击翻转两次」这个真 bug
+      // 注入进去测试照样全绿（注入的坏行为与判据不同频，同 D-051）。
+      await page.click('#batchlabel');
+      await new Promise(r => setTimeout(r, 300));
+      const mode = await page.evaluate(() => ({
+        disp: document.querySelector('#multi').style.display,
+        singleDisabled: document.querySelector('#video').disabled,
+        boxes: document.querySelectorAll('.mVid').length,
+      }));
+      check(26, '批量模式打开后出现多选清单', mode.disp === 'block' && mode.boxes > 3,
+        JSON.stringify(mode));
+      check(27, '批量模式下单选下拉被禁用（一个开关只管一件事）',
+        mode.singleDisabled === true);
+
+      await page.evaluate(() => {
+        const cbs = [...document.querySelectorAll('.mVid')];
+        cbs.filter(c => /trailer\.mp4|codecast\.mp4/.test(c.value))
+           .forEach(c => { c.checked = true; });
+        cbs[0].dispatchEvent(new Event('change'));
+      });
+      const cnt = await page.evaluate(() => document.querySelector('#multiCount').textContent);
+      check(28, '勾选计数正确', cnt.includes('2'), cnt);
+
+      await page.evaluate((out) => {
+        document.querySelector('#k').value = '8';
+        document.querySelector('#fps').value = '12';
+        document.querySelector('#out').value = out;
+      }, bdir);
+      await page.click('#go');
+      await new Promise(r => setTimeout(r, 2500));
+      const during = await page.evaluate(() => ({
+        hint: document.querySelector('#hint').textContent,
+        stage: document.querySelector('#stage').textContent,
+      }));
+      check(29, '批量运行中显示聚合进度（不是只看第一个任务）',
+        during.stage.includes('批量') && during.stage.includes('/2'),
+        JSON.stringify(during));
+
+      await page.waitForFunction(
+        () => {
+          const s = document.querySelector('#hint').textContent;
+          return s.includes('全部完成') || s.includes('失败');
+        },
+        { timeout: 360000, polling: 1000 });
+      await new Promise(r => setTimeout(r, 2000));
+      const bd = await page.evaluate(() => ({
+        hint: document.querySelector('#hint').textContent,
+        stage: document.querySelector('#stage').textContent,
+        jobs: document.querySelectorAll('#jobs .job').length,
+      }));
+      check(30, '批量完成提示是「全部完成（N/N）」', /全部完成（2\/2）/.test(bd.hint), bd.hint);
+      check(31, '历史里出现 2 条批量任务', bd.jobs >= 2, `jobs=${bd.jobs}`);
+
+      // 批量模式关掉，恢复单选，后面的用例继续
+      await page.click('#batchlabel');
+      await page.evaluate(() => { document.querySelector('#out').value = ''; });
+      await new Promise(r => setTimeout(r, 300));
+    }
+
     // ---------------------------------------------------------------- 7 长静默文案存在
     const hasStale = await page.evaluate(() =>
       document.body.innerHTML.includes('仍在工作') ||
       document.documentElement.innerHTML.includes('仍在工作'));
-    check(26, '长静默提示的文案在页面里', hasStale);
+    check(32, '长静默提示的文案在页面里', hasStale);
 
     // ---------------------------------------------------------------- 8 无 JS 错误
-    check(27, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
+    check(33, '全程无 JS 错误', jsErrors.length === 0, jsErrors.slice(0, 3).join(' | '));
     // 预期内的 4xx 是**故意**打的（非法目录用例）；打印出来让它可以被复核，
     // 而不是默默吞掉 —— 吞掉的话"无 JS 错误"这条就变成永不红。
     console.log(`  (预期内的 HTTP 4xx: ${expectedHttpErrors.length} 条，来自非法目录用例)`);
@@ -376,9 +441,9 @@ async function main() {
   // （实测踩到：`finally 没删干净` 是假红，其实是我检查得太早）。
   const leaked = await readdir(path.join(ROOT, 'eval')).catch(() => []);
   const leftovers = leaked.filter(x => x.startsWith('shots-e2e-'));
-  check(28, 'e2e 临时产物目录已清理', leftovers.length === 0,
+  check(34, 'e2e 临时产物目录已清理', leftovers.length === 0,
     leftovers.length ? `${JSON.stringify(leftovers)}（finally 没删干净）` : '');
-  check(29, '没有把产物写进 eval/shots（上次误提交的那条路径）',
+  check(35, '没有把产物写进 eval/shots（上次误提交的那条路径）',
     !leaked.includes('shots'), 'GUI 默认输出目录被写进了仓库');
 
   console.log(`\n${failures === 0 ? '✅ 全部通过' : `❌ ${failures} 条失败`}  ` +

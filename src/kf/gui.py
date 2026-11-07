@@ -71,6 +71,7 @@ class Job:
         self.started = time.time()     # 历史列表要显示"几点开始的"
         self.name = pathlib.Path(video).name
         self.last_progress = time.time()   # 最后一次进度更新的时刻
+        self.group = None                  # 批量组名（单个任务为 None）
 
     def snapshot(self) -> dict:
         return {'id': self.id, 'status': self.status, 'stage': self.stage,
@@ -100,6 +101,7 @@ class Job:
             'params': {k: self.params.get(k) for k in ('k', 'budget', 'canvas', 'balance')},
             'has_result': self.result is not None,
             'error': self.error,
+            'group': self.group,
         }
 
     def stale_seconds(self) -> float:
@@ -154,6 +156,40 @@ class App:
         job.thread = t
         t.start()
         return job
+
+    def start_batch(self, videos, params, group=None) -> list[Job]:
+        """批量：为每个视频**各起一个独立任务**，共用同一个组名。
+
+        **为什么不做成"一个任务里循环多个视频"**：
+        - 单个视频失败会连累整批，且已跑完的产物与失败状态混在一个报告里
+        - 停止语义会变模糊（停在第 3 个之后，前 2 个算完成吗？）
+        - 每个视频的 extract.json / summary.md 都需要独立落盘（续跑依赖它）
+
+        所以这里只是**多起几个 Job、给同一个 group 标签**，
+        组的状态由 `batch_status()` 聚合出来。单个 Job 的语义完全不变。
+        """
+        out = []
+        for v in videos:
+            p = dict(params)
+            # 每个视频的输出目录要分开，否则会互相覆盖产物
+            base = params.get('out') or str(pathlib.Path(v).parent / 'shots')
+            p['out'] = str(pathlib.Path(base) / pathlib.Path(v).stem)
+            j = self.start(v, p)
+            j.group = group
+            out.append(j)
+        return out
+
+    def batch_status(self, group) -> dict:
+        """把一组任务聚合成「N 个里完成几个 / 失败几个 / 还在跑几个」。"""
+        with self.lock:
+            jobs = [j for j in self.jobs.values() if getattr(j, 'group', None) == group]
+        done = sum(1 for j in jobs if j.status == 'done')
+        failed = sum(1 for j in jobs if j.status == 'failed')
+        inter = sum(1 for j in jobs if j.status == 'interrupted')
+        running = sum(1 for j in jobs if j.status in ('queued', 'running'))
+        return {'group': group, 'total': len(jobs), 'done': done, 'failed': failed,
+                'interrupted': inter, 'running': running,
+                'ids': [j.id for j in jobs]}
 
     def stop(self, job_id) -> bool:
         with self.lock:
@@ -330,6 +366,10 @@ class Handler(BaseHTTPRequestHandler):
             if not job:
                 return self._send(404, {'error': 'no such job'})
             return self._send(200, job.snapshot())
+        if path == '/favicon.ico' or path == '/favicon.svg':
+            # 内联 SVG favicon：不加这个的话浏览器会一直请求 /favicon.ico 拿 404，
+            # 而 e2e 把 "console error" 当失败信号 —— 一条无害的 404 会让闸门永远红。
+            return self._send(200, _FAVICON, 'image/svg+xml')
         if path.startswith('/files/'):
             return self._serve_file(path)
         return self._send(404, {'error': 'not found'})
@@ -340,6 +380,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(403, {'error': 'forbidden'})
         if path == '/api/start':
             return self._api_start()
+        if path == '/api/start_batch':
+            return self._api_start_batch()
         if path == '/api/stop':
             body = self._json_body()
             ok = self.app.stop(str(body.get('id', '')))
@@ -381,6 +423,50 @@ class Handler(BaseHTTPRequestHandler):
         existing = self.app.active_for(video, params)
         job = self.app.start(video, params)
         self._send(200, {'id': job.id, 'deduped': existing is not None})
+
+    _BATCH_ALLOWED = {'videos', 'k', 'budget', 'fps', 'balance', 'canvas', 'out'}
+
+    def _api_start_batch(self):
+        """批量：一次提交多个视频。
+
+        **硬约束**：
+        - 视频数上限 50（防止误选整个目录把机器跑爆）
+        - 每个视频的输出目录**必须各自不同**（否则产物互相覆盖）
+        - 所有校验都要在**提交前**做完并一次性报错，不能跑到一半才发现
+        """
+        body = self._json_body()
+        extra = set(body) - self._BATCH_ALLOWED
+        if extra:
+            return self._send(400, {'error': f'不接受参数: {sorted(extra)}'})
+        vids = body.get('videos') or []
+        if not isinstance(vids, list) or not vids:
+            return self._send(400, {'error': 'videos 必须是至少一个视频路径的数组'})
+        if len(vids) > 50:
+            return self._send(400, {'error': f'一次最多 50 个（你给了 {len(vids)} 个）'})
+        missing = [v for v in vids if not pathlib.Path(v).exists()]
+        if missing:
+            return self._send(400, {'error': f'有 {len(missing)} 个素材不存在: '
+                                             + ', '.join(pathlib.Path(x).name for x in missing[:5]),
+                                    'code': 'missing_video'})
+        k, budget = body.get('k'), body.get('budget')
+        if (k is None) == (budget is None):
+            return self._send(400, {'error': 'k 与 budget 必须且只能给一个'})
+        out = body.get('out')
+        if out:
+            bad = self.app.out_dir_error(out)
+            if bad:
+                return self._send(400, {'error': bad, 'code': 'bad_out_dir'})
+        params = {'k': int(k) if k is not None else None,
+                  'budget': float(budget) if budget is not None else None,
+                  'fps': float(body.get('fps') or 6.0),
+                  'balance': float(body.get('balance') if body.get('balance') is not None else 0.2),
+                  'canvas': body.get('canvas') or None,
+                  'out': out or None}
+        group = f'g{int(time.time())}-{secrets.token_hex(2)}'
+        jobs = self.app.start_batch(vids, params, group=group)
+        self._send(200, {'group': group,
+                         'ids': [j.id for j in jobs],
+                         'total': len(jobs)})
 
     def _serve_file(self, path):
         """只服务**输出目录里**的产物（防目录穿越）。"""
@@ -439,10 +525,18 @@ def serve(port=0, root_dir=None, open_browser=True,
 
 
 # ---------------------------------------------------------------- 前端
+#: 内联 SVG 图标（一个"关键帧"符号：边框 + 实心方块）。零依赖，不引外部文件。
+_FAVICON = ('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+            '<rect x="3" y="6" width="26" height="20" rx="3" fill="none" '
+            'stroke="#4a9eff" stroke-width="2"/>'
+            '<rect x="8" y="12" width="7" height="8" rx="1" fill="#4a9eff"/>'
+            '<rect x="18" y="12" width="7" height="8" rx="1" fill="#8b95a7"/></svg>')
+
 _INDEX_HTML = r"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KF-Extract · 关键帧抽取</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
 :root{--bg:#14161a;--panel:#1b1f26;--line:#2b3240;--fg:#e6e9ef;--mut:#8b95a7;
 --acc:#4a9eff;--ok:#35c07a;--warn:#f0b400;--bad:#ec5a5a;--run:#d94a4a}
@@ -532,8 +626,25 @@ padding:5px 12px;font-size:13px}
 
   <div class="card">
     <h2>1 · 选素材</h2>
-    <div><label>素材（只列出本地视频）</label>
-      <select id="video"><option value="">正在扫描…</option></select></div>
+    <div>
+      <label style="display:flex;justify-content:space-between;align-items:center">
+        <span>素材（只列出本地视频）</span>
+        <span style="display:flex;gap:6px;align-items:center">
+          <input type="checkbox" id="batch" style="width:auto;margin:0">
+          <span style="font-size:11px;cursor:pointer" id="batchlabel">批量（可多选）</span>
+        </span>
+      </label>
+      <select id="video"><option value="">正在扫描…</option></select>
+      <div id="multi" style="display:none;margin-top:8px">
+        <div style="color:var(--mut);font-size:11px;margin-bottom:5px">
+          勾选要跑的视频（每个视频输出到独立子目录，不会互相覆盖）
+        </div>
+        <div id="multiList" style="max-height:180px;overflow:auto;background:#0f1216;
+             border:1px solid var(--line);border-radius:7px;padding:8px">
+        </div>
+        <div style="color:var(--mut);font-size:11px;margin-top:5px" id="multiCount">已选 0 个</div>
+      </div>
+    </div>
     <div class="row" style="margin-top:12px">
       <div><label>抽多少帧 (--k)</label><input id="k" type="number" value="40" min="1"></div>
       <div><label>时间均衡</label>
@@ -637,15 +748,47 @@ function setHint(t, bad) {
   h.style.color = bad ? 'var(--bad)' : 'var(--mut)';
 }
 
+let VIDEOS = [];
 async function loadVideos() {
   try {
     const d = await api('/api/videos');
+    VIDEOS = d.videos || [];
     const sel = q('#video');
-    if (!d.videos.length) { sel.innerHTML='<option value="">（没找到视频，把素材放进 eval/ 或下载目录）</option>'; return; }
-    sel.innerHTML = d.videos.map(v =>
-      `<option value="${v.path}">${v.name} · ${v.size_mb}MB</option>`).join('');
+    if (!VIDEOS.length) { sel.innerHTML='<option value="">（没找到视频，把素材放进 eval/ 或下载目录）</option>'; return; }
+    sel.innerHTML = VIDEOS.map(v =>
+      `<option value="${escapeAttr(v.path)}">${esc(v.name)} · ${v.size_mb}MB</option>`).join('');
+    q('#multiList').innerHTML = VIDEOS.map((v, i) =>
+      `<label style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:12px;margin:0">
+         <input type="checkbox" class="mVid" value="${escapeAttr(v.path)}"
+                style="width:auto;margin:0">
+         <span>${esc(v.name)} <span style="color:var(--mut)">· ${v.size_mb}MB</span></span>
+       </label>`).join('');
+    q('#multiList').querySelectorAll('.mVid').forEach(c => c.onchange = syncMultiCount);
   } catch(e) { q('#video').innerHTML = '<option value="">扫描失败: '+e.message+'</option>'; }
 }
+function escapeAttr(s) { return String(s).replace(/"/g, '&quot;'); }
+
+function syncMultiCount() {
+  const n = q('#multiList').querySelectorAll('.mVid:checked').length;
+  q('#multiCount').textContent = `已选 ${n} 个`;
+}
+q('#batch').onchange = () => {
+  const on = q('#batch').checked;
+  q('#multi').style.display = on ? 'block' : 'none';
+  q('#video').disabled = on;
+  syncMultiCount();
+};
+q('#batchlabel').onclick = (ev) => {
+  // **必须 preventDefault**：这个 span 包在 <label> 里，
+  // label 的原生行为是「点击 label → 转发给内部 checkbox」。
+  // 不阻止的话，一次点击会翻转两次（我翻转一次 + label 转发翻一次）→ 净效果为零。
+  // 实测：处理器内部 checked 已经是 true，退出后又变回 false。
+  ev.preventDefault();
+  ev.stopPropagation();
+  const cb = q('#batch');
+  cb.checked = !cb.checked;
+  cb.onchange();
+};
 
 // ---- 输出目录：记住上次选择
 const OUTKEY = 'kf.out';
@@ -664,6 +807,33 @@ q('#out').addEventListener('change', () => {
 });
 
 q('#go').onclick = async () => {
+  const batch = q('#batch').checked;
+  const common = {k: Number(q('#k').value), balance: Number(q('#balance').value),
+                  canvas: q('#canvas').value, fps: Number(q('#fps').value)};
+  const outv = q('#out').value.trim();
+  if (outv) common.out = outv;
+
+  if (batch) {
+    const vids = [...q('#multiList').querySelectorAll('.mVid:checked')].map(c => c.value);
+    if (!vids.length) return setHint('批量模式下至少勾选一个视频', true);
+    if (vids.length > 50) return setHint('一次最多 50 个', true);
+    q('#go').disabled = true; q('#stop').disabled = false;
+    q('#rescard').style.display = 'none';
+    q('#progcard').style.display = 'block';
+    setHint(`已提交 ${vids.length} 个任务…`);
+    try {
+      const r = await api('/api/start_batch', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({videos: vids, ...common})});
+      GROUP = r.group; JOB = r.ids[0];
+      pollBatch();
+    } catch(e) {
+      setHint('批量提交失败: ' + e.message, true);
+      q('#go').disabled=false; q('#stop').disabled=true;
+    }
+    return;
+  }
+
   const video = q('#video').value;
   if (!video) return setHint('先选一个素材', true);
   q('#go').disabled = true; q('#stop').disabled = false;
@@ -671,13 +841,10 @@ q('#go').onclick = async () => {
   q('#progcard').style.display = 'block';
   setHint('已提交…');
   try {
-    const body = {video, k: Number(q('#k').value), balance: Number(q('#balance').value),
-                  canvas: q('#canvas').value, fps: Number(q('#fps').value)};
-    const outv = q('#out').value.trim();
-    if (outv) body.out = outv;
+    const body = {video, ...common};
     const r = await api('/api/start', {method:'POST',
       headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-    JOB = r.id;
+    JOB = r.id; GROUP = null;
     if (r.deduped) setHint('同一个任务已在跑，复用它（不会重复产出）');
     poll(); loadJobs();
   } catch(e) {
@@ -689,9 +856,22 @@ q('#go').onclick = async () => {
 };
 
 q('#stop').onclick = async () => {
-  if (!JOB) return;
   q('#stop').disabled = true;
   setHint('正在停止（已拿到的帧会保留）…');
+  if (GROUP) {
+    // 批量：停掉这一组里**还在跑的每一个**（不能只停当前显示的那个）
+    const d = await api('/api/jobs').catch(() => ({jobs: []}));
+    const mine = (d.jobs || []).filter(j => j.group === GROUP &&
+      (j.status === 'running' || j.status === 'queued'));
+    for (const j of mine) {
+      await api('/api/stop', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({id: j.id})}).catch(() => {});
+    }
+    setHint(`已请求停止 ${mine.length} 个任务（已拿到的帧保留）`);
+    return;
+  }
+  if (!JOB) return;
   await api('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'},
                           body: JSON.stringify({id: JOB})});
 };
@@ -699,6 +879,42 @@ q('#stop').onclick = async () => {
 function stageName(s) {
   return {decode:'解码', select:'选帧', export_frames:'导出单帧',
           sheets:'拼图', done:'完成'}[s] || s || '—';
+}
+
+let GROUP = null;
+function pollBatch() {
+  clearTimeout(TIMER);
+  TIMER = setTimeout(async () => {
+    if (!GROUP) return;
+    let d;
+    try { d = await api('/api/jobs'); } catch(e) { return pollBatch(); }
+    const mine = (d.jobs || []).filter(j => j.group === GROUP);
+    const total = mine.length;
+    const done = mine.filter(j => j.status === 'done').length;
+    const failed = mine.filter(j => j.status === 'failed').length;
+    const inter = mine.filter(j => j.status === 'interrupted').length;
+    const running = total - done - failed - inter;
+    const finished = done + failed + inter;
+    q('#bar').style.width = (total ? finished / total * 100 : 0).toFixed(1) + '%';
+    q('#stage').textContent =
+      `批量：${finished}/${total} 完成` +
+      (failed ? ` · ${failed} 失败` : '') +
+      (inter ? ` · ${inter} 已停止` : '') +
+      (running ? ` · ${running} 在跑` : '');
+    loadJobs();
+    if (finished >= total) {
+      q('#go').disabled = false; q('#stop').disabled = true;
+      setHint(failed ? `${done}/${total} 完成，${failed} 失败` : `全部完成（${done}/${total}）`, failed > 0);
+      // 组里第一个成功的任务，把它的结果展示出来
+      const ok = mine.find(j => j.status === 'done');
+      // quiet：别把"全部完成（N/N）"覆盖成"已恢复该任务的结果"
+      if (ok) { JOB = ok.id; selectJob(ok.id, true); }
+      GROUP = null;
+      return;
+    }
+    setHint(`批量运行中（${finished}/${total}）`);
+    pollBatch();
+  }, 900);
 }
 
 function poll() {
@@ -863,15 +1079,19 @@ async function loadJobs() {
   el.querySelectorAll('.job').forEach(d => d.onclick = () => selectJob(d.dataset.id));
 }
 
-async function selectJob(id) {
+async function selectJob(id, quiet = false) {
+  // quiet=true 时**不改提示文案**：批量完成的那一刻要保住"全部完成（N/N）"，
+  // 不能被随后的"已恢复该任务的结果"覆盖掉（实测：等待文案的用例因此永远超时，
+  // 而且用户也看不到批量结果摘要）。
   JOB = id; loadJobs();
+  const say = (t, bad) => { if (!quiet) setHint(t, bad); };
   const cached = RES[id];
-  if (cached) { renderResult(cached); setHint('已恢复该任务的结果'); return; }
+  if (cached) { renderResult(cached); say('已恢复该任务的结果'); return; }
   try {
     const j = await api('/api/job?id=' + encodeURIComponent(id));
-    if (j.status === 'done' && j.result) { RES[id]=j; renderResult(j); setHint('已恢复该任务的结果'); }
-    else { setHint('该任务状态：' + (STATUS_CN[j.status]||j.status)); }
-  } catch(e) { setHint('找不到该任务', true); }
+    if (j.status === 'done' && j.result) { RES[id]=j; renderResult(j); say('已恢复该任务的结果'); }
+    else { say('该任务状态：' + (STATUS_CN[j.status]||j.status)); }
+  } catch(e) { say('找不到该任务', true); }
 }
 
 // ---- viewer
