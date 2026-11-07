@@ -196,12 +196,20 @@ class JobQueue:
                 return
             if row['status'] in TERMINAL:
                 return          # 已经是终态，不再改（迟到的回调不许覆盖）
+            # **frac 是 NOT NULL**：失败/中断的任务不该把它写成 NULL
+            # （实测：`NOT NULL constraint failed: jobs.frac` 直接把 finish 打断，
+            # 于是失败的任务永远停在 running —— 比"没写 frac"严重得多）。
+            # 失败/中断时保留最后一次已知进度，只有 done 才置 1.0。
+            new_frac = 1.0 if status == 'done' else None
+            if new_frac is None:
+                row2 = c.execute('select frac from jobs where id=?', (job_id,)).fetchone()
+                new_frac = float(row2['frac']) if row2 else 0.0
             c.execute(
                 'update jobs set status=?, finished=?, result=?, error=?, frac=? '
                 'where id=?',
                 (status, time.time(),
                  json.dumps(result, ensure_ascii=False) if result is not None else None,
-                 error, 1.0 if status == 'done' else None, job_id))
+                 error, new_frac, job_id))
 
     # ------------------------------------------------------------ 读取
     def get(self, job_id: int) -> dict | None:

@@ -30,8 +30,16 @@ RESULTS = []
 
 
 def _make_server(root=None):
-    """起一个真服务（随机端口），返回 (srv, app, base_url)。"""
-    app = App(root_dir=root or ROOT)
+    """起一个真服务（随机端口），返回 (srv, app, base_url, token)。
+
+    **队列文件必须是临时的**：如果共享仓库根目录那个 `.kf-queue.db`，
+    单元测试会与 e2e 留下的任务互相污染（实测：断言"初始应为空"直接失败）。
+    这也说明生产队列路径本身没问题 —— 问题在测试不该用生产文件。
+    """
+    import tempfile
+
+    td = tempfile.mkdtemp(prefix='kf-gui-test-')
+    app = App(root_dir=root or ROOT, queue_path=pathlib.Path(td) / 'q.db')
     handler = type('H', (Handler,), {'app': app})
     srv = G._Server(('127.0.0.1', 0), handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -122,33 +130,61 @@ def test_no_delete_endpoint():
 
 # ---------------------------------------------------------------- P0-a 任务历史
 def test_jobs_history_lists_and_orders():
-    """任务历史：最新的在前，且 brief 不带 result（避免一次搬运几百 KB）。"""
+    """任务历史：最新的在前，**且重启后还在**（这是本轮修的断点之一）。
+
+    旧版把 Job 塞进内存 dict 就完事；现在历史从 sqlite 队列读，
+    所以这条测试直接写队列，再**换一个新的 App 实例**（模拟重启）验证。
+    """
     srv, app, base, tok = _make_server()
     try:
         code, d = _get(f'{base}/api/jobs', tok)
         assert code == 200 and d['jobs'] == [], '初始应为空'
 
-        # 直接构造两个 Job（不真跑 extract，避免测试依赖素材）
-        j1 = G.Job('/tmp/a.mp4', {'k': 10})
-        j1.status = 'done'
-        j1.result = {'selected_k': 10, 'images': ['x.png'] * 50}
-        j2 = G.Job('/tmp/b.mp4', {'k': 20})
-        j2.status = 'running'
-        with app.lock:
-            app.jobs[j1.id] = j1
-            app.jobs[j2.id] = j2
-        j1.started = time.time() - 10      # 让 j2 更新
+        # 直接入队（不真跑 extract，避免测试依赖素材）
+        q1 = app.queue.enqueue('/tmp/a.mp4', {'k': 10}, out='/tmp/o1')
+        q2 = app.queue.enqueue('/tmp/b.mp4', {'k': 20}, out='/tmp/o2')
+        app.queue.finish(q1, 'done', result={'selected_k': 10, 'images': ['x.png'] * 50})
+        # q2 保持 queued
 
         code, d = _get(f'{base}/api/jobs', tok)
         jobs = d['jobs']
-        assert len(jobs) == 2
+        assert len(jobs) == 2, f'应有 2 条，实际 {len(jobs)}'
         assert jobs[0]['name'] == 'b.mp4', '最新的应在最前'
         assert jobs[1]['name'] == 'a.mp4'
-        # brief 不许带 result（那可能很大）
-        assert 'result' not in jobs[0], 'brief 带了 result，会让轮询变重'
+        # 列表不带完整 result（那可能很大），只给 has_result
+        assert 'result' not in jobs[0], '历史列表带了 result，会让轮询变重'
         assert jobs[1]['has_result'] is True
-        assert jobs[0]['status'] == 'running'
+        assert jobs[0]['status'] == 'queued'
         assert jobs[1]['status'] == 'done'
+
+        # **重启验证**：换新 App 指向同一个队列文件
+        app2 = App(root_dir=app.root, queue_path=app.queue.path)
+        jobs2 = app2.list_jobs()
+        assert len(jobs2) == 2, f'重启后历史丢了，只剩 {len(jobs2)} 条'
+        assert {j['name'] for j in jobs2} == {'a.mp4', 'b.mp4'}
+        assert app2.queue.get(q1)['result'] is not None, '重启后结果也要还在'
+    finally:
+        srv.shutdown()
+
+
+def test_history_survives_gui_restart_with_running_job():
+    """重启时「running」必须变成 interrupted —— 不许永远卡在"运行中"。
+
+    **为什么这是如实而不是保守**：我们只知道它没留下完成记录，
+    不知道它到底跑完没有。写成 running 会让任务永远转圈，
+    写成 done 是骗人。只有 interrupted 能让用户知道"这条要重跑"。
+    """
+    srv, app, base, tok = _make_server()
+    try:
+        q = app.queue.enqueue('/tmp/c.mp4', {'k': 8}, out='/tmp/o3')
+        app.queue.update(q, status='running')
+        # 模拟「GUI 被杀」：直接新建 App 指向同一个队列
+        app2 = App(root_dir=app.root, queue_path=app.queue.path)
+        rec = app2.queue.get(q)
+        assert rec['status'] == 'interrupted', \
+            f'重启后 running 应被改成 interrupted，实际 {rec["status"]}'
+        assert '退出时未完成' in (rec.get('error') or ''), '缺可读的原因说明'
+        assert app2.recovered >= 1, 'recover() 没报告改了几条'
     finally:
         srv.shutdown()
 

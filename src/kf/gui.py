@@ -72,6 +72,9 @@ class Job:
         self.name = pathlib.Path(video).name
         self.last_progress = time.time()   # 最后一次进度更新的时刻
         self.group = None                  # 批量组名（单个任务为 None）
+        #: 队列里的持久 id（整数）。`self.id` 是运行时字符串 id，两者对应但用途不同：
+        #: 前者用于数据库读写，后者用于前端 URL/去重。保留两个不合并的原因见 D-060。
+        self.qid: int | None = None
 
     def snapshot(self) -> dict:
         return {'id': self.id, 'status': self.status, 'stage': self.stage,
@@ -114,11 +117,21 @@ class Job:
 
 
 class App:
-    def __init__(self, root_dir=None, allow_dirs=None):
+    def __init__(self, root_dir=None, allow_dirs=None, queue_path=None):
+        #: **本进程的活任务运行时句柄**（线程、停止标志、进度时间戳）。
+        #: 持久状态在 `self.queue` 里；这里的 key 与队列 id 一致（字符串形式）。
         self.jobs: dict[str, Job] = {}
         self.lock = threading.Lock()
         self.token = secrets.token_hex(16)
         self.root = pathlib.Path(root_dir or os.getcwd()).resolve()
+        #: 任务账本（sqlite）。**默认落在项目目录**，不进版本库（.gitignore 已配）。
+        from .queue import JobQueue
+
+        self.queue = JobQueue(queue_path or (self.root / '.kf-queue.db'))
+        #: **把所有上次留下的 running 改成 interrupted** ——
+        #: 进程死了就不可能还在跑；写成 running 会让任务永远卡在"运行中"，
+        #: 写成 done 是骗人。只有 interrupted 是如实。
+        self.recovered = self.queue.recover()
         #: 允许选素材的目录。
         #:
         #: **默认只列项目目录**（不含 ~/Downloads / ~/Movies）。
@@ -136,20 +149,46 @@ class App:
                           ensure_ascii=False)
 
     def active_for(self, video, params) -> Job | None:
+        """在途去重。
+
+        **两处都要查**：
+        - 内存里的活任务（正常情况，最快）
+        - 队列里的 queued/running（**进程重启后仍能查到现在排队的任务**）
+
+        只查内存的话，重启后同一个任务会被重复入队 —— 用户会看到跑两遍。
+        """
         key = self._dedupe_key(video, params)
         with self.lock:
             for j in self.jobs.values():
                 if j.key == key and j.status in ('queued', 'running'):
                     return j
+        hit = self.queue.find_active(video, params,
+                                     params.get('out') or None)
+        if hit:
+            # 队列里有、内存里没有（重启前入队的）：包一个只读 Job 给调用方
+            j = Job(hit['video'], hit['params'])
+            j.qid = hit['id']
+            j.status = hit['status']
+            j.group = hit.get('group_id')
+            return j
         return None
 
-    def start(self, video, params) -> Job:
-        """启动任务。**重复请求返回既有任务，不新建** —— 这是连点保护。"""
+    def start(self, video, params, group=None) -> Job:
+        """启动任务。**重复请求返回既有任务，不新建** —— 这是连点保护。
+
+        顺序很重要：**先入队（落盘）再起线程**。
+        反过来的话，线程可能已经跑完而队列里还没有这条记录，
+        重启后历史里就查不到它（实测隐患，不是理论问题）。
+        """
         existing = self.active_for(video, params)
         if existing is not None:
             return existing
+
+        qid = self.queue.enqueue(video, params, out=params.get('out'), group_id=group)
         job = Job(str(video), params)
         job.key = self._dedupe_key(video, params)
+        job.group = group
+        job.qid = qid
         with self.lock:
             self.jobs[job.id] = job
         t = threading.Thread(target=self._run, args=(job,), daemon=True)
@@ -157,39 +196,42 @@ class App:
         t.start()
         return job
 
-    def start_batch(self, videos, params, group=None) -> list[Job]:
+    def start_batch(self, items, group=None) -> list[Job]:
         """批量：为每个视频**各起一个独立任务**，共用同一个组名。
+
+        :param items: `[{'video':..., 'params': {...}, 'out': ...}, ...]`
+                      **每个 item 可以带自己的 params** —— 这是"批量不支持
+                      每个视频不同参数"那个断点的解法。
 
         **为什么不做成"一个任务里循环多个视频"**：
         - 单个视频失败会连累整批，且已跑完的产物与失败状态混在一个报告里
         - 停止语义会变模糊（停在第 3 个之后，前 2 个算完成吗？）
         - 每个视频的 extract.json / summary.md 都需要独立落盘（续跑依赖它）
-
-        所以这里只是**多起几个 Job、给同一个 group 标签**，
-        组的状态由 `batch_status()` 聚合出来。单个 Job 的语义完全不变。
         """
         out = []
-        for v in videos:
-            p = dict(params)
+        for it in items:
+            v = it['video']
+            p = dict(it.get('params') or {})
             # 每个视频的输出目录要分开，否则会互相覆盖产物
-            base = params.get('out') or str(pathlib.Path(v).parent / 'shots')
-            p['out'] = str(pathlib.Path(base) / pathlib.Path(v).stem)
-            j = self.start(v, p)
-            j.group = group
-            out.append(j)
+            if it.get('out'):
+                p['out'] = str(it['out'])
+            else:
+                base = p.get('out') or str(pathlib.Path(v).parent / 'shots')
+                p['out'] = str(pathlib.Path(base) / pathlib.Path(v).stem)
+            out.append(self.start(v, p, group=group))
         return out
 
     def batch_status(self, group) -> dict:
-        """把一组任务聚合成「N 个里完成几个 / 失败几个 / 还在跑几个」。"""
-        with self.lock:
-            jobs = [j for j in self.jobs.values() if getattr(j, 'group', None) == group]
-        done = sum(1 for j in jobs if j.status == 'done')
-        failed = sum(1 for j in jobs if j.status == 'failed')
-        inter = sum(1 for j in jobs if j.status == 'interrupted')
-        running = sum(1 for j in jobs if j.status in ('queued', 'running'))
-        return {'group': group, 'total': len(jobs), 'done': done, 'failed': failed,
-                'interrupted': inter, 'running': running,
-                'ids': [j.id for j in jobs]}
+        """把一组任务聚合成「N 个里完成几个 / 失败几个 / 还在跑几个」。
+
+        **从队列算，不从内存算**：重启后内存里没有这些活句柄，
+        但队列里全都有 —— 这样"组进度"在重启前后是同一个口径。
+        """
+        st = self.queue.group_status(group) if group else {
+            'total': 0, 'done': 0, 'failed': 0, 'interrupted': 0,
+            'running': 0, 'queued': 0, 'cancelled': 0}
+        st['running'] = st.get('running', 0) + st.get('queued', 0)
+        return st
 
     def stop(self, job_id) -> bool:
         with self.lock:
@@ -208,12 +250,26 @@ class App:
         p = job.params
         job.status = 'running'
         job.stage = 'decode'
+        if job.qid is not None:
+            self.queue.update(job.qid, status='running', started=time.time())
+        _last_db = [0.0]
+
         try:
             def prog(stage, frac, msg):
                 if job.stop_requested:
                     raise Interrupted('GUI_STOP')
                 job.stage, job.frac, job.msg = stage, frac, msg
                 job.last_progress = time.time()
+                # **进度落库要节流**：解码时每 256 帧回调一次，
+                # 29 分钟素材会有几十次；每次都写 sqlite 没必要。
+                # 但也不能太稀 —— 重启后用户要能看到"跑到哪了"。取 2 秒。
+                if job.qid is not None and time.time() - _last_db[0] >= 2.0:
+                    _last_db[0] = time.time()
+                    try:
+                        self.queue.update(job.qid, stage=stage,
+                                          frac=float(frac), msg=str(msg)[:400])
+                    except Exception:
+                        pass          # 进度写不进去不该毁掉任务本身
 
             r = extract(job.video, k=p.get('k'), budget=p.get('budget'),
                         fps=p.get('fps', 6.0), balance=p.get('balance', 0.2),
@@ -239,24 +295,56 @@ class App:
             }
             job.status = 'done'
             job.stage, job.frac, job.msg = 'done', 1.0, '完成'
+            if job.qid is not None:
+                self.queue.finish(job.qid, 'done', result=job.result)
         except Interrupted:
             job.status = 'interrupted'
             job.msg = '已停止。已导出的帧保留在输出目录，可重新运行续跑。'
+            if job.qid is not None:
+                self.queue.finish(job.qid, 'interrupted', error=job.msg)
         except Exception as e:                      # noqa: BLE001
             job.status = 'failed'
             job.error = f'{type(e).__name__}: {e}'
             job.msg = job.error
+            if job.qid is not None:
+                self.queue.finish(job.qid, 'failed', error=job.error)
 
     # ---------------------------------------------------------- 任务历史
-    def list_jobs(self) -> list[dict]:
-        """本进程内跑过的所有任务，最新的在前。
+    def list_jobs(self, limit=200) -> list[dict]:
+        """任务历史，最新的在前。**从队列读** —— 所以重启 GUI 后历史还在。
 
-        **只存内存**（D-037）：GUI 是短生命周期进程，落盘会引入
-        「上次崩溃留下僵尸任务」，对单机工具是净负担。
+        形状与 `Job.brief()` 对齐（前端不用改），并补上队列里才有、内存里没有的
+        情况（例如重启前入队但没跑完的任务）。
+
+        > 早期版本只存内存（D-037 的选择），代价是"关掉就忘"。
+        > 现在队列持久化了，这个代价就不该再付 —— 见 D-060。
         """
+        rows = self.queue.list(limit=limit)
+        out = []
         with self.lock:
-            jobs = list(self.jobs.values())
-        return [j.brief() for j in sorted(jobs, key=lambda j: -j.started)]
+            live = {j.qid: j for j in self.jobs.values() if j.qid is not None}
+        for r in rows:
+            j = live.get(r['id'])
+            started = r.get('started') or r.get('created') or 0
+            elapsed = ((r.get('finished') or time.time()) - started
+                       if started else 0)
+            item = {
+                'id': str(r['id']),
+                'name': pathlib.Path(r['video']).name,
+                'status': r['status'],
+                'stage': (j.stage if j else (r.get('stage') or '')),
+                'frac': (round(j.frac, 4) if j else float(r.get('frac') or 0)),
+                'elapsed': round(max(0, elapsed), 1),
+                'started': round(r.get('created') or 0, 1),
+                'params': {k: r['params'].get(k) for k in ('k', 'budget', 'canvas', 'balance')},
+                'has_result': r.get('result') is not None,
+                'error': r.get('error'),
+                'group': r.get('group_id'),
+                'out': r.get('out'),
+                'video': r['video'],
+            }
+            out.append(item)
+        return out
 
     def out_dir_error(self, out) -> str | None:
         """检查输出目录是否可用。返回**可读的中文原因**，None = 可用。
@@ -361,11 +449,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(403, {'error': 'forbidden'})
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             jid = q.get('id', [''])[0]
-            with self.app.lock:
-                job = self.app.jobs.get(jid)
-            if not job:
+            j = self._job_snapshot(jid)
+            if not j:
                 return self._send(404, {'error': 'no such job'})
-            return self._send(200, job.snapshot())
+            return self._send(200, j)
         if path == '/favicon.ico' or path == '/favicon.svg':
             # 内联 SVG favicon：不加这个的话浏览器会一直请求 /favicon.ico 拿 404，
             # 而 e2e 把 "console error" 当失败信号 —— 一条无害的 404 会让闸门永远红。
@@ -373,6 +460,37 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith('/files/'):
             return self._serve_file(path)
         return self._send(404, {'error': 'not found'})
+
+    def _job_snapshot(self, jid) -> dict | None:
+        """任务快照：**内存优先，队列兜底**。
+
+        为什么两处都查：正在跑的任务，内存里有实时进度（更准）；
+        重启后的历史任务，内存里没有，但队列里有结果（否则"点回旧任务"就失效了）。
+        """
+        with self.app.lock:
+            job = self.app.jobs.get(str(jid))
+        if job:
+            return job.snapshot()
+        # 队列兜底（id 是整数）
+        try:
+            qid = int(jid)
+        except (TypeError, ValueError):
+            return None
+        rec = self.app.queue.get(qid)
+        if not rec:
+            return None
+        started = rec.get('started') or rec.get('created') or 0
+        elapsed = ((rec.get('finished') or time.time()) - started) if started else 0
+        return {
+            'id': str(rec['id']), 'status': rec['status'],
+            'stage': rec.get('stage') or '', 'frac': float(rec.get('frac') or 0),
+            'msg': rec.get('msg') or rec.get('error') or '',
+            'elapsed': round(max(0, elapsed), 1),
+            'video': rec['video'], 'params': rec['params'],
+            'error': rec.get('error'),
+            'stale_seconds': 0,
+            'result': rec.get('result'),
+        }
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
@@ -424,7 +542,8 @@ class Handler(BaseHTTPRequestHandler):
         job = self.app.start(video, params)
         self._send(200, {'id': job.id, 'deduped': existing is not None})
 
-    _BATCH_ALLOWED = {'videos', 'k', 'budget', 'fps', 'balance', 'canvas', 'out'}
+    _BATCH_ALLOWED = {'videos', 'k', 'budget', 'fps', 'balance', 'canvas',
+                      'out', 'overrides'}
 
     def _api_start_batch(self):
         """批量：一次提交多个视频。
@@ -463,7 +582,18 @@ class Handler(BaseHTTPRequestHandler):
                   'canvas': body.get('canvas') or None,
                   'out': out or None}
         group = f'g{int(time.time())}-{secrets.token_hex(2)}'
-        jobs = self.app.start_batch(vids, params, group=group)
+        # **每个视频可以带自己的覆盖参数**（`overrides` 是可选字段）：
+        #   {"videos": [...], "params": 公共, "overrides": {"/path/a.mp4": {"k": 40}}}
+        # 这是"批量不支持每个视频不同参数"那个断点的解法。
+        ov = body.get('overrides') or {}
+        if not isinstance(ov, dict):
+            return self._send(400, {'error': 'overrides 必须是 {视频路径: 参数对象}'})
+        items = []
+        for v in vids:
+            pv = dict(params)
+            pv.update(ov.get(v) or {})
+            items.append({'video': v, 'params': pv})
+        jobs = self.app.start_batch(items, group=group)
         self._send(200, {'group': group,
                          'ids': [j.id for j in jobs],
                          'total': len(jobs)})

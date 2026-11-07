@@ -268,7 +268,8 @@ class SignalGuard:
 
 
 def stream_gray(path, sample_fps=None, w: int = 32, h: int = 18,
-                ffmpeg: str | None = None, on_chunk=None) -> "np.ndarray":
+                ffmpeg: str | None = None, on_chunk=None,
+                skip_seconds: float = 0.0) -> "np.ndarray":
     """流式解码成 (n, w*h) uint8 —— 与 `metrics.load_gray` **字节级一致**。
 
     为什么不能直接用 load_gray：它 `subprocess.run` 一次性把 100MB 原始字节
@@ -293,8 +294,15 @@ def stream_gray(path, sample_fps=None, w: int = 32, h: int = 18,
 
     ff = ffmpeg or find_ffmpeg()
     vf = (f'fps={sample_fps},' if sample_fps else '') + f'scale={w}:{h},format=gray'
-    cmd = [ff, '-v', 'error', '-i', str(path), '-vf', vf,
-           '-f', 'rawvideo', '-pix_fmt', 'gray', '-']
+    # `-ss` 放在 `-i` **之前** = 快速定位（关键帧跳转，不解前面的帧）。
+    # 放在之后 = 精确但要把前面全部解一遍，续解就失去意义了。
+    # 这里放前面：续解要的是"大概从这附近接着"，下一段会和已存的部分有少量重叠，
+    # 由调用方按帧数裁掉（见 api.py 的续解路径）。
+    head = [ff, '-v', 'error']
+    if skip_seconds and skip_seconds > 0:
+        head += ['-ss', f'{skip_seconds:.3f}']
+    cmd = head + ['-i', str(path), '-vf', vf,
+                  '-f', 'rawvideo', '-pix_fmt', 'gray', '-']
     D = w * h
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             bufsize=1 << 20)

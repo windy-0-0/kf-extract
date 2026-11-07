@@ -329,6 +329,27 @@ def test_budget_starvation_hint_needs_both_conditions():
         assert not has_hint(r), f'{name} 误报了'
 
 
+def test_out_none_does_not_touch_disk():
+    """`out=None` 是**纯库用法**（只算不落盘），不许碰任何文件路径。
+
+    **这条是真回归的闸门**：我重构解码块时直接把 `pathlib.Path(outdir)` 提了出来，
+    outdir 为 None 时 8 条测试同时红（`TypeError: not 'NoneType'`），
+    但**没有一条测试专门覆盖 out=None**，是靠别的测试顺手撞上的。
+    现在把它钉死：既要能跑通，又确实没写文件。
+    """
+    if not _HAVE:
+        _skip(); return
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        before = sorted(p.name for p in pathlib.Path(td).rglob('*'))
+        r = extract(str(TRAILER), k=8)            # 不给 out
+        after = sorted(p.name for p in pathlib.Path(td).rglob('*'))
+        assert before == after, f'out=None 却写了文件: {set(after) - set(before)}'
+        assert r['selected_k'] == 8
+        assert r['images'] == [], 'out=None 不该有产物'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

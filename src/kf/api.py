@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import os
 import pathlib
 import time
 
@@ -135,37 +136,98 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
         state.flush()
 
     # ---- 阶段 1：解码成 32×18 灰度
+    #
+    # 优先级**必须**是：完整缓存 > 部分缓存续解 > 从头解码
+    # 早期版本把「续解」写在了 `reusable('decode', ...)` 里面，而 `reusable`
+    # 要求该阶段 `state == 'done'` —— 崩溃后状态是 running，于是续解分支
+    # **永远进不去**，每次都从头解（实测：强杀后重跑仍要 55 秒）。
+    # 三者的判据必须分开写，不能嵌套。
     fp_decode = fingerprint(video, {'fps': fps, 'w': 32, 'h': 18})
+    # **outdir 可能是 None**（纯库用法：`kf.extract(video, k=8)` 只算不落盘）。
+    # 早期重构时直接 `pathlib.Path(outdir)`，把纯库 API 整个弄崩了
+    # （TypeError: not 'NoneType'，8 条测试同时红）。判空必须在最前面。
+    npz = pathlib.Path(outdir) / '.kf-cache-gray.npz' if outdir else None
+    partial = pathlib.Path(outdir) / '.kf-partial.npy' if outdir else None
     X = None
-    if state and state.reusable('decode', fp_decode):
-        npz = pathlib.Path(outdir) / '.kf-cache-gray.npz'
-        rec = state.get('decode')
-        # **部分缓存绝不当完整结果**：中断时存的帧数少于全片，
-        # 拿它算出来的 maxdist / 选帧全是错的，而且结果看起来完全正常。
-        # 判据必须同时看 state：只有 interrupted 才是"没解完"。
-        if npz.exists() and rec.get('state') == 'interrupted' and rec.get('partial_frames'):
-            state.warn(f'上次只解出部分帧（{rec["partial_frames"]} 帧），本次重新解码')
-        elif npz.exists():
-            import numpy as np
 
-            X = np.load(npz)['X'].astype('float32')
-            tick('decode', time.time())
-            state.warn('复用上次解码结果（参数未变）')
+    # ① 完整缓存（已验证 done + 指纹一致 + 文件在）
+    if state and npz and state.reusable('decode', fp_decode) and npz.exists():
+        import numpy as np
+
+        X = np.load(npz)['X'].astype('float32')
+        tick('decode', time.time())
+        state.warn('复用上次解码结果（参数未变）')
+
+    # ② 部分缓存 → **续解**（不是重新开始）
+    if X is None and state and partial and partial.exists():
+        import numpy as np
+
+        try:
+            P = np.load(partial)
+            got = len(P)
+            # 合理范围：太小没意义，太大说明文件坏了
+            if 0 < got < 200000:
+                t_partial = time.time()
+                state.warn(f'续用上次已解出的 {got} 帧，从第 {got} 帧继续')
+                rest = stream_gray(video, sample_fps=fps, ffmpeg=ff,
+                                   skip_seconds=got / max(fps, 1e-9))
+                if len(rest):
+                    X = np.concatenate([P.astype('uint8'), rest.astype('uint8')])
+                else:
+                    X = P.astype('uint8')
+                tick('decode', t_partial)
+                np.savez_compressed(npz, X=X.astype('uint8'))
+                try:
+                    partial.unlink()          # 完整缓存已就位，部分缓存可以删了
+                except OSError:
+                    pass
+                if 'decode' in state.data.get('stages', {}):
+                    state.data['stages']['decode'].pop('partial_frames', None)
+                state.mark('decode', 'done', fp=fp_decode, artifacts=[str(npz)])
+        except Exception:                     # noqa: BLE001
+            # 续解失败就老实重来；**不许静默拿半截数据继续**（那是最坏的一种假绿）
+            state.warn('续解失败，本次完整重新解码')
+            X = None
+
+    # ③ 从头解码（带增量落盘，防 SIGKILL）
     if X is None:
         t = time.time()
         if state:
             state.mark('decode', 'running', fp=fp_decode)
-        # 预期总帧数（用于进度百分比）；拿不到就报「已收 N 帧」而不是假装知道分母
         expect = max(1, int(round(_probe_duration(fp, video) * fps))) if dur_hint else 0
 
-        # 解码期间**增量落盘**：中断时已解出的帧不能白丢。
-        # 实测踩到（GUI 加长任务验证时）：29min 素材解码要 40 秒，
-        # 在第 12 秒按停止 → 磁盘上 0 个产物、连缓存都没有，等于这 12 秒白跑。
-        # 而 `--resume` 的全部价值就在「已完成的阶段能复用」，解码是最贵的那个阶段。
         _chunks: list = []
+        #: **增量落盘**：SIGKILL（强杀/拔电）绕过一切 Python 代码，
+        #: `except BaseException` 救不了 —— 必须边解边存。
+        _SAVE_EVERY = 1024
+        _saved = [0]
+
+        def _flush_partial():
+            """把当前已解出的帧写到 `.kf-partial.npy`（原子替换）。
+
+            用 `.npy` 不用 `.npz`：npz 是 zip，每存一次都要全量重压，
+            29 分钟素材会越存越慢。npy 未压缩，写 10403×576 只要 ~6MB / 几十毫秒。
+            """
+            if not state or not _chunks:
+                return
+            try:
+                import numpy as np
+
+                part = np.concatenate(_chunks)
+                tmp = pathlib.Path(outdir) / '.kf-partial.npy.tmp'
+                with open(tmp, 'wb') as f:
+                    np.save(f, part)
+                os.replace(tmp, partial)       # 原子替换：不会留半个文件
+                _saved[0] = len(part)
+                state.mark('decode', 'running', fp=fp_decode,
+                           artifacts=[str(partial)], partial_frames=int(len(part)))
+            except Exception:                  # noqa: BLE001
+                pass                           # 落盘失败不该毁掉解码本身
 
         def _on_chunk(n_got, arr):
             _chunks.append(arr)
+            if n_got - _saved[0] >= _SAVE_EVERY:
+                _flush_partial()
             if progress and expect:
                 progress('decode', min(1.0, n_got / expect), f'已解码 {n_got}/{expect} 帧')
             elif progress:
@@ -175,19 +237,12 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
             with SignalGuard():
                 X = stream_gray(video, sample_fps=fps, ffmpeg=ff, on_chunk=_on_chunk)
         except BaseException:
-            # 无论中断还是出错，把已解出的部分存下来（下次 --resume 直接复用）
+            # 正常中断（Ctrl-C / 停止按钮）走这里；SIGKILL 走不到，靠上面的增量落盘
             if state and _chunks:
-                import numpy as np
-
                 try:
-                    part = np.concatenate(_chunks)
-                    np.savez_compressed(pathlib.Path(outdir) / '.kf-cache-gray.npz',
-                                        X=part)
-                    state.mark('decode', 'interrupted', fp=fp_decode,
-                               artifacts=[str(pathlib.Path(outdir) / '.kf-cache-gray.npz')],
-                               partial_frames=int(len(part)))
-                except Exception:                 # noqa: BLE001
-                    pass                          # 存不下不是致命错误，别掩盖原始异常
+                    _flush_partial()
+                except Exception:              # noqa: BLE001
+                    pass
             raise
         if len(X) == 0:
             raise RuntimeError(f'解出 0 帧：{video}（检查 ffmpeg 是否能解这个容器）')
@@ -195,15 +250,14 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
         if state:
             import numpy as np
 
-            np.savez_compressed(pathlib.Path(outdir) / '.kf-cache-gray.npz', X=X.astype('uint8'))
-            # **必须清掉 partial_frames**：`state.mark` 是 update 语义（不清旧键），
-            # 如果只写 done 而不显式清 partial_frames，下次 resume 会因为看到
-            # 残留的 partial_frames 而误判成"部分缓存"，白跑一次完整解码。
-            # 实测踩到（我自己引入，A/B 验证时发现缓存已被写全却仍被当部分）。
+            np.savez_compressed(npz, X=X.astype('uint8'))
             if 'decode' in state.data.get('stages', {}):
                 state.data['stages']['decode'].pop('partial_frames', None)
-            state.mark('decode', 'done', fp=fp_decode,
-                       artifacts=[str(pathlib.Path(outdir) / '.kf-cache-gray.npz')])
+            state.mark('decode', 'done', fp=fp_decode, artifacts=[str(npz)])
+            try:
+                partial.unlink()              # 完整缓存就位，部分缓存清掉
+            except OSError:
+                pass
 
     n = len(X)
     if progress:

@@ -36,3 +36,8 @@ tests/e2e/package-lock.json
 
 # e2e 单实例锁
 eval/.e2e.lock
+
+# 任务队列（运行时状态，不进版本库）
+.kf-queue.db
+.kf-queue.db-journal
+.kf-queue.db-wal
