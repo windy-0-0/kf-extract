@@ -300,8 +300,8 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
         result['warnings'].append(
             f"发现一段连续 {_longest_static['dur_sec']}s 几乎静止的画面"
             f"（{_longest_static['start_sec']}s→{_longest_static['end_sec']}s）。"
-            "像素度量会把它判为零变化，但里面可能确有内容变化（如录屏里新增的窗口/文字）。"
-            "这类素材的选帧结果需人工抽查。")
+            "像素度量对「缓慢漂移」不敏感（底部字幕、光标、进度条这类小面积变化），"
+            "但整段画面确实基本不变。若这段里有字幕/操作细节，建议人工抽查。")
 
     if len(dark_sel) > 0:
         pct = round(100.0 * len(dark_sel) / max(1, chosen_k), 1)

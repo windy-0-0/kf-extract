@@ -97,48 +97,66 @@ def uniform_idx(n: int, k: int) -> list[int]:
 
 # ---------------------------------------------------------------- 静态段（假绿探测器）
 def static_runs(X: np.ndarray, threshold: float = DIFF_DISTINCT,
-                min_frames: int = 3) -> list[tuple[int, int]]:
-    """找出「连续多少帧彼此几乎相同」的区段（帧号区间，闭区间）。
+                min_frames: int = 3, rep_mb: float = 2.0) -> list[tuple[int, int]]:
+    """找出「整段内任意两帧都足够像」的区段（帧号区间，闭区间）。
 
-    **为什么必须报出来**（实测踩到的假绿，2026-11-07）：
+    ## 判据为什么不能用「相邻帧差」（实测修正，2026-11-07）
 
-    在一段 267 秒的编程录屏上，k-center 报 **maxdist = 3.84**（看上去完美覆盖），
-    同时报 **最大空白 67.2 秒**。两个数字并排才暴露真相：
+    第一版用「相邻帧差 <= threshold」判定，结果在一段真人 Vlog 上把 **34.3 秒**
+    的说话人镜头整段判成静止。但进一步的实测暴露了问题：
 
-    - 199.5s→266.7s 这一整段，段内任意帧到段首的 L1 距离中位 **2.89**、最大 **3.51**
-    - 该段 404 帧里，「与其他帧不同（>8）」的有 **0 帧**
-    - 但肉眼看画面对比：198s 是代码窗口，265s 是**同一个窗口多了终端面板 + 运行输出**
+    | 落点 | 段内两两 L1 中位 | 90 分位 | 最大 | >阈值8 的比例 |
+    |---|---|---|---|---|
+    | 录屏 63→250s（**真静止**，UI 不再变） | 2.95 | 4.92 | 5.77 | **0.0%** |
+    | Vlog 291→324s（**字幕在变**） | 5.48 | 8.52 | 12.62 | **14.3%** |
 
-    也就是说：**这 67 秒里画面上确实新增了信息，而我们的度量判定它「零变化」。**
-    模型按我们的选帧结果看，会以为这两分钟什么都没发生。
+    同样是「相邻帧差很小」（Vlog 那段中位只有 1.17），但段内两两距离有 14.3% 超过阈值。
+    原因：**字幕只在画面底部一小条变化**，逐帧看变化很小，累积到 30 秒后已经
+    「第一个画面和最后一个画面明显不同」。
 
-    根因不是分辨率（把 640×360 也测过，L1=3.64 一样判成重复），
-    而是 **L1 均值先天稀释局部变化**：终端面板只占 ~15% 面积，加上字符是高频细节，
-    平均下来只剩 2.9。
+    所以判据必须是**段内两两距离**，不是相邻帧差。实现上不能真的算 n² 对
+    （10403 帧会爆），改用**代表帧集合**：段内维护一批代表帧，
+    新帧离所有代表都 > threshold/2 就新增代表；一旦某帧离任一代表 > threshold，
+    当前段就结束。这等于用 O(n * 代表数) 近似判定「段内直径 <= threshold」。
 
-    同类问题在所有纯像素方法上都存在（PySceneDetect 在同一素材上只报 **2 个切点**）。
+    ## 为什么必须报出来
 
-    **所以本项目的诚实做法不是「假装解决」，而是「把它报出来」**：
-    有这么长的静态段时，用户应当知道「这段时间的选帧结果可能不可信」，
-    而不是被一个漂亮的 maxdist 骗过去。
+    在一段 267 秒的编程录屏上，k-center 报 **maxdist = 3.84**（看上去完美覆盖）、
+    同时报 **最大空白 67.2 秒**。两个数字并排才暴露真相：63.2s 之后 UI 确实不再变化
+    （1222 帧的相邻差均值 0.13），所以用 1 帧代表那 200 秒**是正确的**。
 
-    Returns: [(start, end)]，帧号区间，end 含在内。
+    但**「静止」和「度量看不见变化」是两件事**。Vlog 那种「底部字幕在变」的情况，
+    整体 L1 测不出（字幕占比太小），必须让用户知道「这段的选帧结果建议人工抽查」。
+
+    **本项目的姿态是把它报出来，不假装解决，也不自动跳过**：
+    整段夜景、片尾黑屏，静就是内容本身；自动规避会变成第二个未声明的目标。
+
+    Returns: [(start, end)]，帧号闭区间，按出现顺序。
     """
     n = len(X)
+    if n == 1:
+        return [(0, 0)]
     if n < 2:
         return []
-    # 相邻帧距离（一次算完，不分块：n 行 × 2 列，内存可忽略）
-    d = np.abs(X[:-1] - X[1:]).mean(axis=1)
-    runs: list[tuple[int, int]] = []
-    start = None
-    for i, v in enumerate(d):
-        if v <= threshold:
-            if start is None:
-                start = i
-        else:
-            if start is not None and (i - start) + 1 >= min_frames:
-                runs.append((start, i))
-            start = None
-    if start is not None and (n - 1 - start) + 1 >= min_frames:
-        runs.append((start, n - 1))
-    return runs
+    X = np.asarray(X, dtype='float32')
+    reps_cap = max(8, int(rep_mb * 1e6 / max(1, X.shape[1] * 4)))
+
+    out: list[tuple[int, int]] = []
+    start = 0
+    reps: list[int] = [0]
+    for i in range(1, n):
+        d_rep = pairwise_l1(X[i:i + 1], X[reps])[0]
+        far = float(d_rep.max())
+        if far > threshold:
+            # 这一帧与段内某代表差得够远 → 当前段结束
+            if i - start >= min_frames:
+                out.append((start, i - 1))
+            start = i
+            reps = [i]
+            continue
+        # 维护代表集：离所有代表都 > threshold/2 就新增一个代表
+        if d_rep.min() > threshold / 2.0 and len(reps) < reps_cap:
+            reps.append(i)
+    if n - start >= min_frames:
+        out.append((start, n - 1))
+    return out

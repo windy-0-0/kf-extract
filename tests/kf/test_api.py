@@ -203,6 +203,49 @@ def test_static_segments_does_not_change_selection():
     assert a == b, '调用静止段检测后选帧结果变了（说明它偷偷影响了算法）'
 
 
+def test_static_runs_uses_segment_diameter_not_adjacent_diff():
+    """静止段判据必须是「段内两两距离」，不是「相邻帧差」。
+
+    这是实测修正（D-035/D-036）：Vlog 同一说话人镜头里字幕在变，
+    相邻帧差中位只有 **1.17**（逐帧看几乎不动），
+    但段内两两距离 90 分位 **8.52**、最大 **12.62**、超过阈值 8 的占 **14.3%**。
+    用相邻帧差判定会把这段 34 秒整段误判成静止；用段内直径才判得对。
+
+    对照组（录屏 63→250s）是**真静止**：段内两两最大只有 5.77，超阈值比例 **0.0%**。
+    两者相邻差分都很小，只有段内直径能把它们分开。
+    """
+    if not _HAVE:
+        _skip(); return
+    import numpy as np
+
+    from kf.metrics import load_gray, pairwise_l1, static_runs
+
+    VLOG = ROOT / 'eval/vlog.mp4'
+    if not VLOG.exists():
+        print('  (skip: 缺 eval/vlog.mp4)'); return
+
+    X = load_gray(str(VLOG), sample_fps=6)
+    n = len(X)
+    runs = static_runs(X, min_frames=6)
+    longest = max(((b - a + 1) / 6 for a, b in runs), default=0)
+
+    # 291s→324s 那一段（字幕在变）不许被整段判成静止
+    A, B = int(291 * 6), int(324 * 6)
+    whole = [(a, b) for a, b in runs
+             if a <= A + 12 and b >= B - 12 and (b - a + 1) > (B - A) * 0.85]
+    assert not whole, (
+        f'vlog 291→324s（字幕在变）被判成了静止段 {whole}，'
+        f'说明判据退回了「相邻帧差」这种过宽的形式')
+
+    # 用相邻帧差做不到这件事：验证这个前提本身仍成立
+    d_adj = float(np.abs(X[A:B - 1] - X[A + 1:B]).mean())
+    seg = X[A:B]
+    D = pairwise_l1(seg, seg)
+    np.fill_diagonal(D, np.nan)
+    assert d_adj < 2.0, f'相邻帧差 {d_adj:.2f} 不再小，该用例前提已变'
+    assert np.nanpercentile(D, 90) > 8.0, '段内两两距离 90 分位不再 >8，前提已变'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

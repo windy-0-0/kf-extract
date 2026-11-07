@@ -126,7 +126,7 @@ def summary_markdown(report: dict, sheets: list, images: list) -> str:
     lg = st.get('longest')
     if lg and lg.get('dur_sec', 0) >= 10:
         L.append(f'- ⚠️ **连续静止 {lg["dur_sec"]}s**（{lg["start_sec"]}s→{lg["end_sec"]}s）'
-                 f'—— 像素度量把这段判为零变化，但它可能含有局部新增内容（录屏/PPT/字幕）')
+                 f'—— 整段画面基本不变；但像素度量对缓慢漂移（字幕/光标）不敏感，可抽查')
     dk = report.get('dark_frames') or {}
     if dk.get('in_selection'):
         L.append(f'- 黑场：选中帧里 **{dk["in_selection"]} 帧近乎全黑**'
