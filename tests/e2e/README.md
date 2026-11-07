@@ -45,3 +45,17 @@ CHROME_PATH=/path/to/chrome KF_PORT=9000 node tests/e2e/run.mjs
 | 长静默文案 | 运行中且超阈值时出现「仍在工作」|
 
 任何一条失败都会让进程退出码非零，可直接接 CI。
+
+## 不要同时跑两份
+
+e2e 会起 GUI、在 `eval/` 下建临时目录。**两份额外同时跑会互相干扰**
+（实测：一份还在跑时另一份启动，出现过一次 1 条断言失败，重跑就绿）。
+
+要并行请给不同的仓库副本 + 不同的 `KF_PORT`：
+
+```bash
+# 两个不同的 clone，各自跑
+KF_PORT=30001 node tests/e2e/run.mjs
+```
+
+另：`bash scripts/accept_all.sh` 里已经把 e2e 放在最后，不会与单元测试并发。

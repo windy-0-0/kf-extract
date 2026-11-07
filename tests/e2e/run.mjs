@@ -18,13 +18,17 @@
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
 const CHROME = process.env.CHROME_PATH ||
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const ROOT = path.resolve(import.meta.dirname, '../..');
-const PY = process.env.KF_PY || path.join(ROOT, 'venv/bin/python');
+// Python 解析兜底（干净克隆没有 venv/）
+const PY = process.env.KF_PY ||
+  (existsSync(path.join(ROOT, 'venv/bin/python'))
+    ? path.join(ROOT, 'venv/bin/python') : 'python3');
 
 const results = [];
 let failures = 0;
@@ -61,6 +65,12 @@ async function startGui(port) {
       if (m) { clearTimeout(t); resolve(m[1]); }
     });
     proc.stderr.on('data', d => { buf += d.toString(); });
+    // spawn 本身失败不会触发 exit，只发 'error'；不监听就白等到 30 秒（实测）
+    proc.on('error', e => {
+      clearTimeout(t);
+      reject(new Error(`起不来 GUI 进程：${e.message}\n  PY=${PY}\n` +
+        '  用 KF_PY=/path/to/python 指定解释器，或先 pip install kf-extract。'));
+    });
     proc.on('exit', c => { clearTimeout(t); reject(new Error(`GUI 提前退出 code=${c}\n${buf}`)); });
   });
   return { proc, token };
@@ -89,6 +99,45 @@ async function main() {
 
   const gui = await startGui(port);
   const url = `http://127.0.0.1:${port}/?token=${gui.token}`;
+
+  // **素材预检**（放在 GUI 起来之后、浏览器之前）：
+  // e2e 要用 eval/*.mp4，而素材在 Release 附件里、不在仓库。
+  // 干净克隆里必然没有 —— 那不等于"代码坏了"，必须区分（同 D-029）。
+  // 缺素材时打印下载命令并以**退出码 0** 结束（SKIP，不是 FAIL）。
+  {
+    const onDisk = await readdir(path.join(ROOT, 'eval')).catch(() => []);
+    const mp4 = onDisk.filter(f => /\.(mp4|mkv|webm|mov)$/i.test(f));
+    if (mp4.length < 4) {
+      console.log(`\n⚠️  SKIP：eval/ 下只有 ${mp4.length} 个视频，e2e 至少要 4 个。`);
+      console.log('   素材在 Release 附件里：');
+      console.log('     gh release download v0.2.2 --repo windy-0-0/kf-extract \\');
+      console.log('        --pattern "eval-assets-2.zip" -D /tmp');
+      console.log('     unzip -o /tmp/eval-assets-2.zip -d .');
+      console.log('   （前 6 段动画在 v0.1.0 的 eval-assets.zip；两包解到同一个 eval/）');
+      gui.proc.kill('SIGTERM');
+      for (const d of tmpDirs) await rm(d, { recursive: true, force: true }).catch(() => {});
+      process.exit(0);
+    }
+  }
+
+  // **素材预检**：e2e 要用 eval/*.mp4，而素材在 Release 附件里、不在仓库。
+  // 干净克隆里必然没有 —— 那不等于"代码坏了"，必须区分（同 D-029）。
+  // 缺素材 → 打印下载命令 + 退出码 0（SKIP，不是 FAIL）。
+  {
+    const onDisk = await readdir(path.join(ROOT, 'eval')).catch(() => []);
+    const mp4 = onDisk.filter(f => /\.(mp4|mkv|webm|mov)$/i.test(f));
+    if (mp4.length < 4) {
+      console.log(`\n⚠️  SKIP：eval/ 下只有 ${mp4.length} 个视频，e2e 至少要 4 个。`);
+      console.log('   素材在 Release 附件里：');
+      console.log('     gh release download v0.2.2 --repo windy-0-0/kf-extract \\');
+      console.log('        --pattern "eval-assets-2.zip" -D /tmp');
+      console.log('     unzip -o /tmp/eval-assets-2.zip -d .');
+      console.log('   （前 6 段动画在 v0.1.0 的 eval-assets.zip；两包解到同一个 eval/）');
+      gui.proc.kill('SIGTERM');
+      for (const d of tmpDirs) await rm(d, { recursive: true, force: true }).catch(() => {});
+      process.exit(0);
+    }
+  }
 
   let browser;
   try {
