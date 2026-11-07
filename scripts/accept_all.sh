@@ -50,7 +50,13 @@ if [ "$FAST" = "0" ]; then
   echo
   echo "=================== 5. GUI 端到端（真浏览器）==================="
   if [ -d tests/e2e/node_modules ]; then
-    node tests/e2e/run.mjs || FAIL=1
+    # 失败时把完整输出留到文件：偶发失败最怕"重跑就绿、下次又红"，
+    # 必须能翻到当次是哪一条断掉的（否则等于没有这个闸门）。
+    node tests/e2e/run.mjs 2>&1 | tee /tmp/kf-e2e.log
+    if [ "${PIPESTATUS[0]}" != "0" ]; then
+      FAIL=1
+      echo "  失败的完整日志: /tmp/kf-e2e.log"
+    fi
   else
     echo "  跳过：tests/e2e/node_modules 不存在。先跑 cd tests/e2e && npm install"
   fi

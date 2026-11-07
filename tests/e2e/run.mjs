@@ -18,7 +18,7 @@
 import puppeteer from 'puppeteer-core';
 import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, rm, readdir } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, openSync, closeSync, unlinkSync, writeSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 
@@ -76,7 +76,48 @@ async function startGui(port) {
   return { proc, token };
 }
 
+// ---------------------------------------------------------------- 单实例锁
+// **两份 e2e 不能同时跑**：它们会在同一个 eval/ 下建临时目录、抢同一批素材，
+// 实测出现过一次偶发 1 条失败（重跑就绿 —— 这种闸门等于不可信）。
+// 用文件锁在进程入口就拒绝第二份，而不是让它跑到中途才互相干扰。
+const LOCK = path.join(ROOT, 'eval', '.e2e.lock');
+
+function acquireLock() {
+  try {
+    const fd = openSync(LOCK, 'wx');       // wx = 不存在才创建（原子）
+    writeSync(fd, String(process.pid));
+    closeSync(fd);
+    return true;
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      // 判断锁是不是僵尸（上一个进程崩了没删）
+      let pid = 0;
+      try { pid = Number(readFileSync(LOCK, 'utf8')); } catch {}
+      if (pid) {
+        try { process.kill(pid, 0); }        // 0 号信号 = 只探活
+        catch { unlinkSync(LOCK); return acquireLock(); }   // 进程没了 → 抢锁
+      }
+      return false;
+    }
+    throw e;
+  }
+}
+function releaseLock() {
+  try { unlinkSync(LOCK); } catch {}
+}
+
 async function main() {
+  await mkdir(path.join(ROOT, 'eval'), { recursive: true });
+  if (!acquireLock()) {
+    console.error('\n❌ 另一份 e2e 正在跑（见 eval/.e2e.lock）。');
+    console.error('   两份同时跑会互相干扰（抢素材目录、偶发断言失败）。');
+    console.error('   等它结束，或删掉 eval/.e2e.lock（确认没有残留进程后）。');
+    process.exit(4);
+  }
+  process.on('exit', releaseLock);
+  process.on('SIGINT', () => { releaseLock(); process.exit(130); });
+  process.on('SIGTERM', () => { releaseLock(); process.exit(143); });
+
   const port = Number(process.env.KF_PORT || (20000 + Math.floor(Math.random() * 20000)));
   // **临时目录必须建在项目目录之下**，不能用系统 tmpdir。
   // 原因：GUI 的输出目录白名单是「家目录或项目目录」，`os.tmpdir()` 给出的是

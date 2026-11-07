@@ -33,3 +33,6 @@ eval/shots-*/
 # e2e 测试的依赖与产物（puppeteer-core 是测试专用，不进产品）
 tests/e2e/node_modules/
 tests/e2e/package-lock.json
+
+# e2e 单实例锁
+eval/.e2e.lock
