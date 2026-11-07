@@ -127,7 +127,14 @@ class App:
         #: 任务账本（sqlite）。**默认落在项目目录**，不进版本库（.gitignore 已配）。
         from .queue import JobQueue
 
-        self.queue = JobQueue(queue_path or (self.root / '.kf-queue.db'))
+        # 队列文件位置：显式参数 > 环境变量 KF_QUEUE > 项目目录下默认文件。
+        # **必须认 KF_QUEUE**：CLI 用它是约定的（D-060），GUI 不认就会两边指向
+        # 不同文件 —— 实测：e2e 传了 KF_QUEUE 却被忽略，读到了开发者的生产历史
+        # （断言"历史 2 条"实际 16 条）。
+        self.queue = JobQueue(
+            queue_path
+            or os.environ.get('KF_QUEUE')
+            or (self.root / '.kf-queue.db'))
         #: **把所有上次留下的 running 改成 interrupted** ——
         #: 进程死了就不可能还在跑；写成 running 会让任务永远卡在"运行中"，
         #: 写成 done 是骗人。只有 interrupted 是如实。

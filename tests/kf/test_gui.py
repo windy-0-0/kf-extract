@@ -318,6 +318,53 @@ def test_no_delete_ui():
         assert bad not in out, f'界面上出现了删除相关：{bad}'
 
 
+def test_gui_respects_kf_queue_env():
+    """GUI 必须认 `KF_QUEUE` —— 否则和 CLI 指向不同文件。
+
+    实测踩到：e2e 传了 `KF_QUEUE=eval/.e2e-queue.db`，GUI 却忽略它、
+    固定用 `root_dir/.kf-queue.db`，于是读到了开发者的生产历史
+    （断言"历史 2 条"实际读到 16 条，连带 [9] 也挂）。
+    """
+    import os
+    import tempfile
+
+    from kf.gui import App
+
+    with tempfile.TemporaryDirectory() as td:
+        qp = pathlib.Path(td) / 'explicit.db'
+        old = os.environ.get('KF_QUEUE')
+        try:
+            os.environ['KF_QUEUE'] = str(qp)
+            a = App(root_dir=td)
+            assert str(a.queue.path) == str(qp), \
+                f'GUI 没认 KF_QUEUE，用的是 {a.queue.path}'
+        finally:
+            if old is None:
+                os.environ.pop('KF_QUEUE', None)
+            else:
+                os.environ['KF_QUEUE'] = old
+
+
+def test_explicit_queue_path_beats_env():
+    """显式传 queue_path 优先于环境变量（测试要能完全隔离）。"""
+    import os
+    import tempfile
+
+    from kf.gui import App
+
+    with tempfile.TemporaryDirectory() as td:
+        explicit = pathlib.Path(td) / 'explicit.db'
+        envv = pathlib.Path(td) / 'env.db'
+        old = os.environ.get('KF_QUEUE')
+        try:
+            os.environ['KF_QUEUE'] = str(envv)
+            a = App(root_dir=td, queue_path=explicit)
+            assert str(a.queue.path) == str(explicit)
+        finally:
+            if old is None:
+                os.environ.pop('KF_QUEUE', None)
+            else:
+                os.environ['KF_QUEUE'] = old
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

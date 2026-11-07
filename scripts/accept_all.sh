@@ -49,6 +49,8 @@ if [ $? -eq 0 ]; then tail -2 /tmp/probe.out; else tail -6 /tmp/probe.out; FAIL=
 if [ "$FAST" = "0" ]; then
   echo
   echo "=================== 5. GUI 端到端（真浏览器）==================="
+  # 先清掉 e2e 专用的队列（它由 KF_QUEUE 指向，与生产隔离）
+  rm -f eval/.e2e-queue.db
   if [ -d tests/e2e/node_modules ]; then
     # 失败时把完整输出留到文件：偶发失败最怕"重跑就绿、下次又红"，
     # 必须能翻到当次是哪一条断掉的（否则等于没有这个闸门）。

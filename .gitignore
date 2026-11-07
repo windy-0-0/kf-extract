@@ -41,3 +41,4 @@ eval/.e2e.lock
 .kf-queue.db
 .kf-queue.db-journal
 .kf-queue.db-wal
+eval/.e2e-queue.db

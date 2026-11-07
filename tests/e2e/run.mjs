@@ -74,10 +74,20 @@ async function settleImages(page, timeout = 8000) {
     { timeout }).catch(() => {});
 }
 
+//: e2e 专用的队列文件。**必须与生产 `.kf-queue.db` 隔离**：
+//: 否则 e2e 会读到开发者自己跑的历史（实测：断言"历史 2 条"实际读到 16 条），
+//: 反过来也会污染开发者的历史。
+const E2E_QUEUE = path.join(ROOT, 'eval', '.e2e-queue.db');
+
 async function startGui(port, reuseQueue = false) {
   const proc = spawn(PY, ['-m', 'kf.cli', '--gui', '--no-browser', '--port', String(port)], {
     cwd: ROOT,
-    env: { ...process.env, PYTHONPATH: path.join(ROOT, 'src') },
+    env: {
+      ...process.env,
+      PYTHONPATH: path.join(ROOT, 'src'),
+      // **独立队列**：与生产 `.kf-queue.db` 隔离，两边互不影响
+      KF_QUEUE: E2E_QUEUE,
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let buf = '';
@@ -161,6 +171,10 @@ async function main() {
 
   console.log(`\n=== KF-Extract GUI 端到端回归 ===`);
   console.log(`  端口 ${port} · 输出 ${outDirTmp}`);
+
+  // 每次 e2e 都从**空队列**开始：断言"历史有 2 条"依赖这个前提，
+  // 用旧队列会读到上一次跑的历史（实测：期望 2 条，实际 16 条）。
+  await rm(E2E_QUEUE, { force: true }).catch(() => {});
 
   const gui = await startGui(port);
   const url = `http://127.0.0.1:${port}/?token=${gui.token}`;
@@ -597,6 +611,8 @@ async function main() {
     for (const d of tmpDirs) {
       await rm(d, { recursive: true, force: true }).catch(() => {});
     }
+    await rm(E2E_QUEUE, { force: true }).catch(() => {});
+    await rm(E2E_QUEUE + '-journal', { force: true }).catch(() => {});
   }
 
   // ---------------------------------------------------------------- 10 仓库没被污染

@@ -123,7 +123,10 @@ def check_scope(module: str) -> list[str]:
                  'docs/status/FINAL.md', 'docs/status/M1-report.md',
                  'docs/status/BASELINE-FROZEN.json', '.gitignore', 'README.md'):
             continue
-        if c.startswith('tests/kf/test_kcenter.py') or c.startswith('docs/design/'):
+        # **测试文件一律放行**：这个探针是「三个外部 agent 有没有越界改别人的模块」，
+        # 而测试文件是每个模块自己的交付物、也是统筹方正常的维护对象。
+        # 早期逐文件列白名单，导致每加一个测试文件就要补一次（反复踩，实测三次）。
+        if c.startswith('tests/kf/test_') or c.startswith('docs/design/'):
             continue
         allowed = ALLOWED.get(module, set())
         if c.endswith('/'):
