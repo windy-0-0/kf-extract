@@ -15,7 +15,7 @@ TRAILER = ROOT / 'eval/trailer.mp4'
 _HAVE = TRAILER.exists()
 
 
-def _run(argv, timeout=120):
+def _run(argv, timeout=120, cwd=None):
     import os
 
     # **必须让工作区的 src 排在最前**：否则 `-m kf.cli` 可能命中
@@ -24,7 +24,7 @@ def _run(argv, timeout=120):
     # 因为跑的是 site-packages 里的旧包。
     env = {**os.environ, 'PYTHONPATH': SRC, 'PYTHONNOUSERSITE': '1'}
     r = subprocess.run([PY, '-m', 'kf.cli', *argv], capture_output=True,
-                       text=True, timeout=timeout, cwd=ROOT, env=env)
+                       text=True, timeout=timeout, cwd=(cwd or ROOT), env=env)
     return r.returncode, r.stdout + r.stderr
 
 
@@ -251,6 +251,47 @@ def test_probe_reports_cost_estimate():
     assert m, f'没解析出任何预算对应的帧数:\n{out}'
 
 
+def test_history_does_not_require_video():
+    """`--history` 不需要素材路径（它不是抽取，是查账本）。
+
+    实测踩到：分发顺序写错，`kf-extract --history` 被
+    "需要给出视频路径"拦住，用户会以为这个功能不存在。
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        rc, out = _run(['--history'], cwd=td)
+        assert rc == 0, f'--history 应成功，实际 rc={rc}: {out}'
+        assert '还没有任务记录' in out or '共' in out, out
+
+
+def test_recover_does_not_require_video():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        rc, out = _run(['--recover'], cwd=td)
+        assert rc == 0, f'--recover 应成功，实际 rc={rc}: {out}'
+        assert '没有需要恢复' in out or '已把' in out, out
+
+
+def test_history_shows_interrupted_with_reason():
+    """被中断的任务要显示原因与停在哪个阶段 —— 用户据此决定要不要续跑。"""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        # 造一条 running 记录（模拟上次崩了）
+        code = (
+            'import sys, pathlib; sys.path.insert(0, %r);'
+            'from kf.queue import JobQueue;'
+            'q = JobQueue(pathlib.Path(%r) / ".kf-queue.db");'
+            'i = q.enqueue("/v/x.mp4", {"k": 8}, out="/o/x");'
+            'q.update(i, status="running", stage="decode", frac=0.42)'
+        ) % (str(ROOT / 'src'), td)
+        subprocess.run([str(PY), '-c', code], check=True, capture_output=True)
+        rc, out = _run(['--history'], cwd=td)
+        assert rc == 0, out
+        assert 'interrupted' in out or '已中断' in out, out
+        assert '未完成' in out, f'没显示中断原因:\n{out}'
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

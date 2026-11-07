@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import time
 import sys
 
 from . import __version__
@@ -80,6 +81,10 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
     ap.add_argument('--zip', action='store_true',
                     help='完成后把产物（不含报告）打成一个 zip。')
     ap.add_argument('--quiet', '-q', action='store_true', help='只输出最终结果行。')
+    ap.add_argument('--history', action='store_true',
+                    help='列出最近跑过的任务（从任务队列读，跨会话保留）')
+    ap.add_argument('--recover', action='store_true',
+                    help='把上次崩溃留下的「运行中」任务标成已中断，并提示哪些可以续跑')
     ap.add_argument('--probe', action='store_true',
                     help='只量不抽：先告诉你这段素材"有多难抽"、大概要多少帧，'
                          '不写任何文件（用于预判成本）')
@@ -146,6 +151,14 @@ def main(argv=None) -> int:
             print('\n已退出。', flush=True)
             srv.shutdown()
         return 0
+
+    # --history / --recover：读任务队列，**不需要 video**
+    # 必须放在 video 检查之前 —— 否则 `kf-extract --history` 会被
+    # "需要给出视频路径"拦住（实测踩到）。
+    if a.history:
+        return _show_history(a)
+    if a.recover:
+        return _recover_queue(a)
 
     if not a.video:
         print('FAIL: 需要给出视频路径（或用 --gui 打开界面）', file=sys.stderr)
@@ -236,6 +249,78 @@ def main(argv=None) -> int:
         z = write_zip(a.out, pathlib.Path(a.out) / 'kf-frames.zip', files=keep)
         print(f'打包: {z}（{z.stat().st_size // 1024}KB）')
 
+    return 0
+
+
+def _queue_root() -> pathlib.Path:
+    """队列文件的位置。
+
+    **与 GUI 用同一个文件**（cwd 下的 `.kf-queue.db`）：
+    同一个项目里 cmd 和 GUI 应该看到同一份历史，否则用户会以为"命令行跑的不算数"。
+    """
+    return pathlib.Path.cwd() / '.kf-queue.db'
+
+
+def _show_history(a) -> int:
+    """列出任务历史（跨会话保留）。
+
+    **为什么 CLI 也要这个**：很多人不开 GUI。
+    只给 GUI 做历史，等于告诉他"命令行跑的那些不算数"。
+    """
+    from .queue import JobQueue
+
+    q = JobQueue(_queue_root())
+    q.recover()                     # 顺手把上次崩溃的 running 标成 interrupted
+    rows = q.list(limit=30)
+    if not rows:
+        print('还没有任务记录（队列: %s）' % q.path)
+        return 0
+    print(f'{"时间":<17}{"素材":<26}{"状态":<12}{"参数":<12}{"耗时":>7}')
+    print('─' * 76)
+    for r in rows:
+        t = time.strftime('%m-%d %H:%M:%S', time.localtime(r['created']))
+        name = pathlib.Path(r['video']).name
+        if len(name) > 25:
+            name = name[:22] + '…'
+        p = r['params']
+        ps = f'k={p["k"]}' if p.get('k') is not None else f'budget={p.get("budget")}'
+        started = r.get('started') or r['created']
+        dur = (r.get('finished') or time.time()) - started
+        st = r['status']
+        mark = {'done': '', 'failed': '  ✗', 'interrupted': '  ⏸',
+                'running': '  ▶', 'queued': '  ⌛'}.get(st, '')
+        print(f'{t:<17}{name:<26}{st+mark:<12}{ps:<12}{dur:>6.1f}s')
+        if r.get('error') and st != 'done':
+            print(f'{"":<17}└─ {r["error"][:70]}')
+    print()
+    print(f'共 {len(rows)} 条（队列: {q.path}）')
+    print('续跑某条：kf-extract <同一个素材> --k ... --out <它原来的输出目录> --resume')
+    return 0
+
+
+def _recover_queue(a) -> int:
+    """把上次崩溃留下的「运行中」标成已中断，并指出哪些能续。
+
+    **这是如实不是保守**：我们只知道它没留下完成记录，不知道跑完没有。
+    写成 running 会让任务永远转圈，写成 done 是骗人。
+    """
+    from .queue import JobQueue
+
+    q = JobQueue(_queue_root())
+    n = q.recover()
+    if n == 0:
+        print('没有需要恢复的任务（没有残留的「运行中」记录）')
+        return 0
+    print(f'已把 {n} 条「运行中」标成「已中断」（上次退出时没跑完）:')
+    for r in q.list(limit=200):
+        if r['status'] == 'interrupted':
+            stage = r.get('stage') or '?'
+            frac = (r.get('frac') or 0) * 100
+            out = r.get('out') or '(未指定输出目录)'
+            print(f'  {pathlib.Path(r["video"]).name}  停在 {stage} {frac:.0f}%  → {out}')
+    print()
+    print('这些可以续跑（已解码的部分会复用，不用从头解）:')
+    print('  kf-extract <素材> --k ... --out <同一输出目录> --resume')
     return 0
 
 
