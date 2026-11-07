@@ -3,7 +3,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / 'src'))
 import numpy as np
 from kf.kcenter import (kcenter, kcenter_balanced, need_for_budget,
-                             budget_track, compare_with_uniform, time_coverage)
+                             budget_track, compare_with_uniform, time_coverage,
+                             describe_motion)
 from kf import metrics
 
 rng = np.random.default_rng(0)
@@ -214,6 +215,61 @@ def test_uint8_wraparound_is_the_real_hazard():
     assert wrapped != true_diff, '前提失效：uint8 减法不再回绕'
     assert wrapped == 9, f'回绕值不符预期（可能 numpy 版本变了）：{wrapped}'
     assert true_diff == 247
+
+
+def test_describe_motion_levels_are_ordered():
+    """档位必须按相邻帧差单调，且**每个阈值两侧都要有样本**。
+
+    **为什么必须测边界两侧**（实测教训）：第一版只测了 0.3/2.0/6.0/14.0 四个点，
+    把阈值 `adj<4.0` 改成 `adj<3.0` 后测试**依然全绿** ——
+    因为 2.0 在新旧阈值下都被判成"中低"，正好没碰到边界。
+    只测"区间内部"的样本，永远抓不到"阈值挪动"。
+
+    真实阈值（实测标定）：极低 adj<1 | 中低 1<=adj<4 | 中高 4<=adj<10 | 极高 adj>=10
+    对应真实素材：codecast 0.37 / vlog 3.84 / mv227 6.08 / liveact 14.01
+    """
+    def seq_with_adj(target, n=40, D=576):
+        base = np.full((n, D), 200.0, dtype='float32')
+        dirn = 1
+        for i in range(1, n):
+            nxt = base[i - 1] + dirn * target
+            if nxt.max() > 254 or nxt.min() < 1:
+                dirn = -dirn
+                nxt = base[i - 1] + dirn * target
+            base[i] = nxt
+        return base
+
+    # 每档取一个靠中间的点 + **每个阈值两侧各取一点**
+    cases = [
+        (0.5, '极低'), (0.9, '极低'), (1.1, '中低'),   # 边界 1.0 两侧
+        (3.0, '中低'), (4.5, '中高'),                  # 边界 4.0 两侧
+        (9.0, '中高'), (11.0, '极高'),                 # 边界 10.0 两侧
+    ]
+    for target, want in cases:
+        d = describe_motion(seq_with_adj(target))
+        assert d['motion_level'] == want, \
+            f'相邻差 {d["adjacent_mean"]:.2f} 判成 {d["motion_level"]}，期望 {want}'
+
+    # 必须有 caveat（档位是粗略参考，不许冒充承诺值）
+    d = describe_motion(np.zeros((30, 576), dtype='float32'))
+    assert 'caveat' in d and '非承诺' in d['caveat'], '缺"非承诺值"提示'
+
+
+def test_describe_motion_guide_is_seconds_not_frames():
+    """档位必须给「每几秒一帧」，不能给帧数 —— 用户是按时间想事情的。"""
+    X = np.random.default_rng(0).integers(0, 256, (50, 576), dtype=np.uint8)
+    d = describe_motion(X)
+    lo, hi = d['sec_per_frame_guide']
+    assert 0 < lo < hi, f'区间不合法: {(lo, hi)}'
+    # 极高档应当在 1 秒以内（每 0.5~1s 一帧）
+    if d['motion_level'] == '极高':
+        assert hi <= 1.5
+
+
+def test_describe_motion_handles_tiny_input():
+    d = describe_motion(np.zeros((1, 576), dtype='float32'))
+    assert d['motion_level'] == 'unknown'
+    assert 'note' in d
 
 
 if __name__ == '__main__':

@@ -83,7 +83,8 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
     素材有问题抛 `RuntimeError`，用户中断抛 `state.Interrupted`。
     """
     from .export import manifest, prune_stale, summary_markdown, write_json
-    from .kcenter import kcenter, kcenter_balanced, need_for_budget, time_coverage
+    from .kcenter import (describe_motion, kcenter, kcenter_balanced,
+                             need_for_budget, time_coverage)
     from .layout import CANVAS_PROFILES, DEFAULT_CANVAS_PROFILE, constraints_for, plan
     from .metrics import load_gray, static_runs
     from .procs import FFmpegNotFound, describe, find_ffmpeg, find_ffprobe
@@ -257,6 +258,10 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
     _runs_info.sort(key=lambda r: -r['dur_sec'])
     _longest_static = _runs_info[0] if _runs_info else None
 
+    # ---- 成本锚点：这段素材"有多难抽"（用户运行前就该知道大概要多少帧）
+    motion = describe_motion(X)
+    result_motion = motion
+
     # ---- 派生指标（与选帧解耦，便于复核）
     cov = time_coverage(keys, n)
     ks = sorted(keys)
@@ -309,6 +314,7 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
         'median_gap_sec': median_gap_sec,
         'static_segments': {'count': len(_runs_info), 'longest': _longest_static,
                             'top': _runs_info[:5]},
+        'motion': result_motion,
         'dark_frames': {'in_video': dark_total, 'in_selection': len(dark_sel),
                         'selection_idx': dark_sel,
                         'threshold_mean_gray': 8.0},

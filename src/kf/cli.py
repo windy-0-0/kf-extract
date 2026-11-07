@@ -80,6 +80,9 @@ def build_parser(parser_cls=argparse.ArgumentParser) -> argparse.ArgumentParser:
     ap.add_argument('--zip', action='store_true',
                     help='完成后把产物（不含报告）打成一个 zip。')
     ap.add_argument('--quiet', '-q', action='store_true', help='只输出最终结果行。')
+    ap.add_argument('--probe', action='store_true',
+                    help='只量不抽：先告诉你这段素材"有多难抽"、大概要多少帧，'
+                         '不写任何文件（用于预判成本）')
     ap.add_argument('--gui', action='store_true',
                     help='启动本地 Web 界面（浏览器打开，只绑 127.0.0.1）')
     ap.add_argument('--port', type=int, default=0,
@@ -147,6 +150,10 @@ def main(argv=None) -> int:
     if not a.video:
         print('FAIL: 需要给出视频路径（或用 --gui 打开界面）', file=sys.stderr)
         return 1
+
+    # --probe：只量不抽，给用户预判成本（不写任何文件，不改素材）
+    if a.probe:
+        return _probe_only(a)
 
     # 参数层的错误先挡住，别让它跑 100 秒解码之后才报
     if a.k is not None and a.k <= 0:
@@ -229,6 +236,57 @@ def main(argv=None) -> int:
         z = write_zip(a.out, pathlib.Path(a.out) / 'kf-frames.zip', files=keep)
         print(f'打包: {z}（{z.stat().st_size // 1024}KB）')
 
+    return 0
+
+
+def _probe_only(a) -> int:
+    """只量不抽：预测「这段素材有多难抽、大概要多少帧」。
+
+    **为什么需要这个子命令**（D-049）：`--budget` 是诚实的（用户给盲区预算、
+    工具反解最小 K），但代价跨度实测 **4 到 261 帧（65 倍）**，
+    用户没法预估"这次要抽多少帧、值不值"。
+
+    所以先给一个只读的探针：量动作强度 → 给粗档位 → 给 2–3 个预算下的预估 K
+    与"每几秒一帧"。**不写任何文件**（不是抽帧的前置步骤）。
+    """
+    from .kcenter import describe_motion, need_for_budget
+    from .metrics import load_gray
+    from .procs import FFmpegNotFound
+
+    try:
+        X = load_gray(a.video, sample_fps=a.fps)
+    except FFmpegNotFound:
+        _report_env_failure()
+        return 3
+    except RuntimeError as e:
+        print(f'FAIL: {e}', file=sys.stderr)
+        return 2
+    if len(X) == 0:
+        print('FAIL: 解出 0 帧', file=sys.stderr)
+        return 2
+
+    d = describe_motion(X)
+    n = len(X)
+    dur = n / max(a.fps, 1e-9)
+    print(f'{pathlib.Path(a.video).name}  {dur:.0f}s / {n} 帧 @{a.fps}fps')
+    print(f'动作强度: 相邻帧平均 L1 = {d["adjacent_mean"]}  →  '
+          f'档位 **{d["motion_level"]}**（{d["note"]}）')
+    lo, hi = d['sec_per_frame_guide']
+    print(f'粗估: 每 {lo}~{hi} 秒一帧'
+          f'（{d["caveat"]}）')
+    print()
+    print(f'{"预算":>6}{"最少帧数":>10}{"每几秒一帧":>12}{"打包 token":>12}')
+    for b in (40, 30, 20):
+        r = need_for_budget(X, b, cap=n)
+        if r is None:
+            print(f'{b:>6}{"—":>10}{"—":>12}{"—":>12}')
+            continue
+        k = r['k']
+        spf = dur / k if k else 0
+        tok = -(-k // 4) * 407          # 4 帧一张图集，407 tok/张（readable 档）
+        print(f'{b:>6}{k:>10}{spf:>11.1f}s{tok:>12}')
+    print()
+    print('选一档后直接跑:  kf-extract 视频 --budget <上面的预算>')
     return 0
 
 

@@ -319,3 +319,82 @@ def time_coverage(keys: Sequence[int], n: int, buckets: int = 10) -> dict:
         'empty_buckets': int((counts == 0).sum()),
         'imbalance': round(mx / ideal, 2) if len(keys) else None,
     }
+
+
+def describe_motion(X: np.ndarray, *,
+                    distance: Callable | None = None) -> dict:
+    """给用户一个**可预估的成本锚点**：这段素材"有多难抽"。
+
+    ## 为什么需要它（实测，2026-11-07）
+
+    `--budget` 是诚实的（用户给"盲区多大可接受"，工具反解最小 K），
+    但**代价跨度大到无法预估**：同样给预算 30，实测 5 段素材分别是
+
+    | 素材 | K | 换算成"每多少秒一帧" |
+    |---|---|---|
+    | trailer（14s 快切）| 4 | 每 3.5s |
+    | codecast（静态录屏）| 5 | 每 53.4s |
+    | vlog（真人说话）| 45 | 每 11.1s |
+    | mv227（MV 运动）| 194 | 每 1.2s |
+    | liveact（街拍走动）| **261** | 每 0.8s |
+
+    同一个预算，K 从 **4 到 261（65 倍）**。用户没法预估"这次要多少帧"。
+
+    ## 这个函数回答什么
+
+    它不改选帧，只量两件事让用户能预判：
+    - `motion_level`：把「相邻帧平均距离」映射到 低/中/高 四档
+    - `sec_per_frame_guide`：每档对应的"每多少秒一帧"经验值
+
+    档位阈值来自上表的实测标定（`adjacent_mean` 是 32×18 灰度上的 L1 均值）：
+    极低 adj<1 | 中低 1<=adj<4 | 中高 4<=adj<10 | 极高 adj>=10
+
+    Returns: dict（可直接进报告）
+    """
+    import numpy as np
+
+    X = _as_float(X)
+    n = len(X)
+    if n < 2:
+        return {'n': n, 'adjacent_mean': 0.0, 'motion_level': 'unknown',
+                'sec_per_frame_guide': None,
+                'note': '帧数太少，无法评估',
+                'caveat': '粗略参考，非承诺值；精确 K 请用 --budget 实测'}
+    adj = float(np.abs(X[:-1] - X[1:]).mean())
+    dist = _adapt(distance or pairwise_l1, X)
+    rng = np.random.default_rng(0)
+    m = min(200, n)
+    idx = rng.choice(n, m, replace=False)
+    med_pair = float(np.median(dist(idx)[np.triu_indices(m, 1)])) if m > 1 else 0.0
+
+    if adj < 1.0:
+        level, guide = '极低', (40, 60)
+        note = '素材几乎不动（静态 UI / PPT / 长时间定格）'
+    elif adj < 4.0:
+        level, guide = '中低', (8, 15)
+        note = '动作缓慢（真人说话 / 剧情对话）'
+    elif adj < 10.0:
+        level, guide = '中高', (1, 3)
+        note = '有明显运动（MV / 一般实拍）'
+    else:
+        level, guide = '极高', (0.5, 1)
+        note = '连续运动 / 快切，固定 K 会留大盲区'
+
+    return {
+        'n': n,
+        'adjacent_mean': round(adj, 2),
+        'pairwise_median': round(med_pair, 2),
+        'motion_level': level,
+        'sec_per_frame_guide': guide,
+        'note': note,
+        # **必须带这句**：档位是粗略经验值，不是承诺。
+        #
+        # 已知偏差（实测，不做掩饰）：`trailer`（14s 快切）adj=2.33 落在"中低"档
+        # （建议 8-15s/帧），但它真实只需 **3.5s/帧**。
+        # 原因：**分类只看"动作快慢"，不看"时长"**。14 秒素材按 8s/帧算不到 2 帧，
+        # 而覆盖优化至少要 3-4 帧才成形 —— 分母太小，档位失效。
+        # 修法不是加时长判断（会让规则变复杂且仍有反例），
+        # 而是**明确告诉用户这只是参考、精确值请用 --budget 实测**。
+        'caveat': '粗略参考，非承诺值；精确 K 请用 --budget 实测',
+    }
+
