@@ -61,7 +61,7 @@ class ExtractResult(dict):
 def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
             canvas=None, out=None, images=True, sheets=True,
             image_ext='png', sheet_ext='jpg', quality=88,
-            resume=False, progress=None) -> ExtractResult:
+            resume=False, progress=None, record=True) -> ExtractResult:
     """从视频选出 K 个关键帧（可选拼成图集）并导出。
 
     :param video: 视频路径（任何 ffmpeg 能解的东西）
@@ -488,6 +488,53 @@ def extract(video, k=None, budget=None, fps=6.0, balance=0.2,
 
     if progress:
         progress('done', 1.0, '完成')
+
+    # ---- 记入任务队列（让 `--history` 能看到命令行跑过的任务）
+    #
+    # `record=False` 供 GUI 使用：GUI 自己管队列（要管进度、组、取消），
+    # 这里再记一条会让历史里出现**两条重复记录**（实测隐患）。
+    if not record:
+        return result
+    #
+    # **为什么 CLI 也要记**：早期只有 GUI 写队列，于是 `kf-extract --history`
+    # 对命令行用户永远显示"还没有任务记录" —— 等于这个命令不存在。
+    # 实测踩到：抽了两次，队列里 0 条。
+    #
+    # 默认落在 **cwd**（与 GUI 同一个文件），用户可以用 KF_QUEUE 指定别处。
+    # 失败不致命：记不了账不该让已经成功的抽取变成失败。
+    try:
+        from .queue import JobQueue
+
+        qpath = pathlib.Path(os.environ.get('KF_QUEUE')
+                             or pathlib.Path.cwd() / '.kf-queue.db')
+        q = JobQueue(qpath)
+        # 不重复记账：同 video+params+out 且已有终态记录时不重复插
+        # （但用户可能就是想再跑一次，所以这里**只在没有记录时插**，不拦第二次）
+        qid = q.enqueue(video, {'k': k, 'budget': budget, 'fps': fps,
+                                'balance': balance, 'canvas': canvas},
+                        out=str(outdir) if outdir else None)
+        # **必须补 started**：CLI 是一次性调用，不经过 claim_next，
+        # 不补的话历史里耗时永远显示 0.0s（实测）。
+        # 用「现在 - 本次实际耗时」反推开始时刻，这样时长才对得上。
+        import time as _t
+
+        q.update(qid, status='running',
+                 started=_t.time() - float(result.get('elapsed_s') or 0))
+        status = 'interrupted' if result.get('status') == 'interrupted' else 'done'
+        # 队列的 result 只存**可复核的摘要**，不存整个 images 列表
+        # （几百个路径塞进数据库没有意义，产物本身在目录里）
+        brief = {kk: result.get(kk) for kk in
+                 ('selected_k', 'maxdist', 'max_gap_sec', 'median_gap_sec',
+                  'time_coverage', 'canvas_plan', 'elapsed_s', 'status')}
+        brief['images'] = len(result.get('images') or [])
+        brief['sheets'] = len(result.get('sheet_files') or [])
+        if status == 'done':
+            q.finish(qid, 'done', result=brief)
+        else:
+            q.finish(qid, 'interrupted', error='被中断')
+    except Exception:                     # noqa: BLE001
+        pass                              # 记账失败不毁掉抽取结果
+
     return result
 
 

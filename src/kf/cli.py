@@ -245,9 +245,18 @@ def main(argv=None) -> int:
     if a.zip:
         from .export import write_zip
 
-        keep = [p.name for p in r.images + r.sheet_files]
-        z = write_zip(a.out, pathlib.Path(a.out) / 'kf-frames.zip', files=keep)
-        print(f'打包: {z}（{z.stat().st_size // 1024}KB）')
+        # `r.images` / `r.sheet_files` 是**字符串路径**（不是 Path 对象）——
+        # 早期写成 `p.name` 会抛 AttributeError，而那个异常被外层吞掉，
+        # 于是用户看到"抽取成功了但没有 zip"（实测：--zip 静默失效）。
+        keep = [pathlib.Path(x).name for x in
+                list(r.images or []) + list(r.sheet_files or [])]
+        try:
+            z = write_zip(a.out, pathlib.Path(a.out) / 'kf-frames.zip', files=keep)
+            print(f'打包: {z}（{z.stat().st_size // 1024}KB）')
+        except Exception as e:                    # noqa: BLE001
+            # **不许静默**：打包失败必须说出来（用户明确要了这个产物）
+            print(f'FAIL: 打包失败 {type(e).__name__}: {e}', file=sys.stderr)
+            return 1
 
     return 0
 

@@ -292,6 +292,66 @@ def test_history_shows_interrupted_with_reason():
         assert rc == 0, out
         assert 'interrupted' in out or '已中断' in out, out
         assert '未完成' in out, f'没显示中断原因:\n{out}'
+def test_cli_run_is_recorded_in_history():
+    """**CLI 抽取必须写任务队列** —— 否则 `--history` 对命令行用户是空功能。
+
+    实测踩到：只有 GUI 写队列，命令行抽了两次后 `--history` 仍显示
+    "还没有任务记录"。这等于告诉命令行用户"你跑的那些不算数"。
+    """
+    import tempfile
+
+    if not _HAVE:
+        _skip(); return
+    with tempfile.TemporaryDirectory() as td:
+        rc, out = _run([str(TRAILER), '--k', '8', '--out', td, '--quiet'], cwd=td)
+        assert rc == 0, out
+        rc2, hist = _run(['--history'], cwd=td)
+        assert rc2 == 0, hist
+        assert '还没有任务记录' not in hist, \
+            f'CLI 抽取后历史仍是空的:\n{hist}'
+        assert 'done' in hist, f'历史里没有 done 记录:\n{hist}'
+        # 耗时必须有值（started 没补的话会显示 0.0s）
+        import re
+        m = re.search(r'([\d.]+)s$', [l for l in hist.splitlines() if 'done' in l][0])
+        assert m and float(m.group(1)) > 0, f'耗时是 0:\n{hist}'
+
+
+def test_gui_double_record_guard():
+    """`record=False` 供 GUI 用，避免同一次抽取在历史里出现两条。
+
+    GUI 自己管队列（进度/组/取消），`extract` 若再记一条会有重复记录。
+    """
+    src = (ROOT / 'src' / 'kf' / 'gui.py').read_text()
+    assert 'record=False' in src, 'GUI 没传 record=False（会和 extract 重复记账）'
+    api = (ROOT / 'src' / 'kf' / 'api.py').read_text()
+    assert 'record: bool' in api or 'record=True' in api, 'extract 没有 record 开关'
+def test_zip_produces_a_real_file():
+    """`--zip` 必须真的产出 zip。
+
+    实测踩到：参数在、帮助里有，但代码里写了 `p.name`（p 其实是字符串），
+    抛的 AttributeError 又被外层吞掉 —— 用户看到"抽取成功但没有 zip"。
+    **最坏的组合：功能存在、静默失效。**
+    """
+    import tempfile
+
+    if not _HAVE:
+        _skip(); return
+    with tempfile.TemporaryDirectory() as td:
+        rc, out = _run([str(TRAILER), '--k', '8', '--out', td, '--zip', '--quiet'],
+                       cwd=td)
+        assert rc == 0, out
+        zips = list(pathlib.Path(td).glob('*.zip'))
+        assert zips, f'--zip 没产出 zip，目录里只有: ' \
+                     f'{sorted(p.name for p in pathlib.Path(td).iterdir())[:6]}'
+        assert zips[0].stat().st_size > 10000, f'zip 太小: {zips[0].stat().st_size}'
+        import zipfile
+        with zipfile.ZipFile(zips[0]) as zf:
+            names = zf.namelist()
+        assert any(n.startswith('frame-') for n in names), 'zip 里没有单帧'
+        assert any(n.startswith('sheet-') for n in names), 'zip 里没有拼图'
+        assert 'extract.json' not in names, 'zip 不该包含报告（文档里写的是"不含报告"）'
+
+
 if __name__ == '__main__':
     fns = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
     ok = 0

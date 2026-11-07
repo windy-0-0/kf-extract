@@ -275,7 +275,8 @@ class App:
                         fps=p.get('fps', 6.0), balance=p.get('balance', 0.2),
                         canvas=p.get('canvas'), out=p.get('out'),
                         images=True, sheets=p.get('sheets', True),
-                        quality=p.get('quality', 88), progress=prog)
+                        quality=p.get('quality', 88), progress=prog,
+                        record=False)   # GUI 自己管队列，别再记一条（否则历史重复）
             job.result = {
                 'selected_k': r.get('selected_k'),
                 'maxdist': r.get('maxdist'),
